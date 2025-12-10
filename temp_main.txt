@@ -1,0 +1,47 @@
+﻿"""
+ QApplication??援ъ꽦?섍퀬 硫붿씤 ?덈룄?곕? 援щ룞?섎뒗 ?곗쿂 紐⑤뱢
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from PyQt6.QtWidgets import QApplication, QMainWindow
+
+
+def load_styles(app: QApplication) -> None:
+    """Load optional QSS stylesheet if present."""
+    style_path = Path(__file__).resolve().parent / "resources" / "styles.qss"
+    if style_path.exists():
+        app.setStyleSheet(style_path.read_text(encoding="utf-8"))
+
+
+def create_window() -> QMainWindow:
+    """Create the main window, falling back to a simple placeholder."""
+    try:
+        from app.ui.main_window import MainWindow  # type: ignore
+    except Exception:
+        class MainWindow(QMainWindow):
+            def __init__(self) -> None:
+                super().__init__()
+                self.setWindowTitle("Randora Viewer (placeholder)")
+
+    window = MainWindow()
+    window.resize(1200, 800)
+    return window
+
+
+def main() -> None:
+    app = QApplication(sys.argv)
+    app.setApplicationName("Randora Viewer")
+    app.setOrganizationName("Randora")
+
+    load_styles(app)
+    window = create_window()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
+
