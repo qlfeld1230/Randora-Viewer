@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        toolbar.setStyleSheet("QToolBar { border: 0px; background: transparent; }")
         toolbar.setIconSize(QSize(14, 14))
         spacer = QWidget(self)
         spacer.setFixedWidth(6)  # manual left gap
