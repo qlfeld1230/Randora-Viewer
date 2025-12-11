@@ -165,7 +165,6 @@ class BatchEditDialog(QDialog):
         path_layout.addWidget(self.path_btn, 0)
         layout.addWidget(path_container)
 
-        # 숫자 일괄 변환 버튼 (추후 로직 연결)
         number_container = QWidget(self)
         number_layout = QHBoxLayout(number_container)
         number_layout.setContentsMargins(0, 0, 0, 0)

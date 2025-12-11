@@ -1,5 +1,3 @@
-# QApplication을 구성하고 메인 윈도우를 구동하는 런처 모듈
-
 from __future__ import annotations
 
 import sys

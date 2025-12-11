@@ -42,7 +42,6 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Randora Viewer")
-        # 기본 타이틀바 제거 후 커스텀 타이틀바 사용.
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self._icons_dir = Path(__file__).resolve(
         ).parent.parent / "resources" / "icons"
@@ -75,21 +74,19 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_statusbar()
         self._init_layout()
-        self._update_nav_buttons()  # 초기 상태에서는 양쪽 네비게이션을 비활성화
+        self._update_nav_buttons()
         # Set a generous default viewer size to minimize letterboxing on load.
         self.resize(2560, 1440)
 
         self.nav_container.request_prev.connect(self._show_prev_image)
         self.nav_container.request_next.connect(self._show_next_image)
         self._update_max_button_icon()
-        # 화살표/삭제 단축키 바인딩 (중앙 네비 영역 기준)
         self._image_shortcuts = bind_image_navigation(
             self.nav_container, self._show_prev_image, self._show_next_image
         )
         self._delete_shortcut = bind_delete(
             self.nav_container, self._delete_current_image
         )
-        # 전체화면 단축키
         self._shortcut_fullscreen_toggle = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
         self._shortcut_fullscreen_toggle.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._shortcut_fullscreen_toggle.activated.connect(self.toggle_fullscreen)
@@ -97,10 +94,8 @@ class MainWindow(QMainWindow):
         self._shortcut_exit_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._shortcut_exit_fullscreen.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._shortcut_exit_fullscreen.activated.connect(self._exit_fullscreen)
-        # 정렬/ASC 초기화 (세션값 반영)
         self._init_sort_controls()
 
-        # 이전 폴더 자동 로드
         if self._last_folder and self._last_folder.exists():
             try:
                 images = list_images(self._last_folder, recursive=False)
@@ -175,7 +170,6 @@ class MainWindow(QMainWindow):
                                     QSizePolicy.Policy.Expanding)
         toolbar.addWidget(stretch_right)
 
-        # 키워드(추가 예정) 영역 - 초기 None 항목
         self.keyword_combo = QComboBox(self)
         self.keyword_combo.setMinimumWidth(90)
         self.keyword_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
@@ -189,7 +183,6 @@ class MainWindow(QMainWindow):
         spacer_keywords.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         toolbar.addWidget(spacer_keywords)
 
-        # 설정 버튼 (구분선 왼쪽)
         self.settings_btn = QToolButton(self)
         self.settings_btn.setIcon(QIcon(str(self._icon_path("setting icon.png"))))
         self.settings_btn.setIconSize(QSize(16, 16))
@@ -198,7 +191,6 @@ class MainWindow(QMainWindow):
         self.settings_btn.clicked.connect(self._show_settings_menu)
         toolbar.addWidget(self.settings_btn)
 
-        # 창 제어 버튼 왼쪽 구분선 (길이 20px)
         divider = QFrame(self)
         divider.setFrameShape(QFrame.Shape.VLine)
         divider.setFrameShadow(QFrame.Shadow.Plain)
@@ -206,7 +198,6 @@ class MainWindow(QMainWindow):
         divider.setFixedHeight(20)
         toolbar.addWidget(divider)
 
-        # 창 제어 버튼(밝은 커스텀 아이콘)
         controls = QWidget(self)
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(0, 0, 0, 0)
@@ -359,7 +350,6 @@ class MainWindow(QMainWindow):
         self._update_image_info(path)
         self._update_title_label(path)
         self._update_nav_buttons()
-        # 이미지 전환 시 포커스를 네비게이션 컨테이너로 줘서 단축키가 즉시 동작하도록.
         self.nav_container.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
 
     def _show_prev_image(self) -> None:
@@ -389,7 +379,6 @@ class MainWindow(QMainWindow):
             self._set_info_placeholder()
             self._update_nav_buttons()
             return
-        # 현재가 필터에 없으면 처음으로
         if current and current in self._images:
             self._current_index = self._images.index(current)
         else:
@@ -477,7 +466,6 @@ class MainWindow(QMainWindow):
         if not self._images:
             return
         if self._sort_mode == "random":
-            # 랜덤은 정렬 방향에 영향받지 않음.
             return
         current = self._images[self._current_index]
         self._rebuild_images(current)
@@ -522,7 +510,6 @@ class MainWindow(QMainWindow):
     def _init_sort_controls(self) -> None:
         mode_to_index = {"date": 0, "name": 1, "random": 2}
         idx = mode_to_index.get(self._sort_mode, 0)
-        # 시그널 차단하여 초기 설정 시 rebuild가 중복 호출되지 않도록 함.
         self.sort_combo.blockSignals(True)
         self.sort_combo.setCurrentIndex(idx)
         self.sort_combo.blockSignals(False)
@@ -674,13 +661,11 @@ class MainWindow(QMainWindow):
         try:
             self._keywords_path.parent.mkdir(parents=True, exist_ok=True)
             if not self._keywords_path.exists():
-                # 파일이 없으면 기본 None만 저장
                 self._keywords_path.write_text("None\n", encoding="utf-8")
             lines = [
                 ln.strip()
                 for ln in self._keywords_path.read_text(encoding="utf-8").splitlines()
             ]
-            # 기본 None 추가
             seen: list[str] = ["None"]
             for kw in lines:
                 if not kw:
@@ -689,7 +674,6 @@ class MainWindow(QMainWindow):
                     continue
                 if kw not in seen:
                     seen.append(kw)
-            # 파일이 비었거나 None만 있는 경우에도 최소 None 유지
             if not seen:
                 seen = ["None"]
                 self._keywords_path.write_text("None\n", encoding="utf-8")
@@ -715,7 +699,6 @@ class MainWindow(QMainWindow):
             if kw.lower() == "none":
                 continue
             self.keyword_combo.addItem(f" {kw}")
-        # 이전 선택 복원
         if self._last_keyword:
             target_text = f" {self._last_keyword}"
             idx = self.keyword_combo.findText(target_text)
@@ -745,7 +728,7 @@ class MainWindow(QMainWindow):
 
     def _on_keyword_context_menu(self, pos) -> None:
         index = self.keyword_combo.currentIndex()
-        if index <= 0:  # "None" 또는 없음
+        if index <= 0:
             return
         text = self.keyword_combo.itemText(index).strip()
         if not text or text.lower() == "none":
@@ -847,14 +830,12 @@ class MainWindow(QMainWindow):
             self._show_status("변경할 이미지가 없습니다.")
             return
 
-        # 날짜 오래된 것부터 정렬
         images.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
 
         keywords_lower = {kw.lower(): kw for kw in self._keywords if kw.lower() != "none"}
         current_path = self._images[self._current_index] if self._images else None
         replacement: Path | None = None
 
-        # 1차: 충돌 방지용 임시 이름으로 변경
         temp_paths: list[tuple[Path, str | None, Path]] = []
         for idx, img in enumerate(images, start=1):
             base_lower = img.stem.lower()
@@ -918,11 +899,9 @@ class MainWindow(QMainWindow):
             send2trash.send2trash(str(path))
             return
         except Exception:
-            # send2trash 미설치 또는 실패 시 OS별 기본 처리
             pass
 
         if sys.platform.startswith("win"):
-            # SHFileOperationW 사용
             FO_DELETE = 3
             FOF_ALLOWUNDO = 0x40
             FOF_NOCONFIRMATION = 0x10
@@ -1115,7 +1094,6 @@ class NavigationContainer(QWidget):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        # 포커스를 받아 단축키가 동작하도록 한다.
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         super().mousePressEvent(event)
 
@@ -1133,7 +1111,6 @@ class NavigationContainer(QWidget):
 
         for btn in (self.prev_btn, self.next_btn):
             if show:
-                # 비활성 버튼은 그대로 숨김 유지.
                 if not btn.isEnabled():
                     btn.setVisible(False)
                     continue

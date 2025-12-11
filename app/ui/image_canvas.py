@@ -26,7 +26,6 @@ class ImageCanvas(QLabel):
         self._source: QPixmap | None = None
         self._scaled: QPixmap | None = None
         self._current_path: Path | None = None
-        # 중앙 정렬로 레터박스가 균등하도록 설정.
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(QSize(200, 200))
@@ -80,14 +79,13 @@ class ImageCanvas(QLabel):
             return
         self._scaled = self._source.scaled(
             available,
-            Qt.AspectRatioMode.KeepAspectRatio,  # 전체 이미지 표시, 균등 레터박스
+            Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        self.setText("")  # 텍스트 제거
+        self.setText("")
         self.update()
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
-        # 배경(스타일)을 먼저 그린다.
         opt = QStyleOption()
         opt.initFrom(self)
         painter = QStylePainter(self)
@@ -100,7 +98,6 @@ class ImageCanvas(QLabel):
             painter.drawPixmap(x, y, self._scaled)
             return
 
-        # 이미지 없을 때는 QLabel 기본 동작으로 텍스트 표시.
         super().paintEvent(event)
 
     @property
