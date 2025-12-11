@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtGui import QPixmap, QMouseEvent
 from PyQt6.QtWidgets import (
     QLabel,
     QSizePolicy,
@@ -18,6 +18,8 @@ from PyQt6.QtWidgets import (
 
 class ImageCanvas(QLabel):
     """Displays the currently selected image, scaled to fit."""
+
+    request_open = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +56,17 @@ class ImageCanvas(QLabel):
         self._current_path = None
         self.setText("이미지가 없습니다")
         self.update()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if (
+            isinstance(event, QMouseEvent)
+            and event.button() == Qt.MouseButton.LeftButton
+            and self._source is None
+        ):
+            self.request_open.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)

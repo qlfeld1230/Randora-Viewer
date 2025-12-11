@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
             icon_path = self._icon_path("Randora.png")
         self.setWindowIcon(QIcon(str(icon_path)))
         self.canvas = ImageCanvas(self)
+        self.canvas.request_open.connect(self._on_open_folder)
         self.nav_container = NavigationContainer(self.canvas, self._icons_dir)
         self._last_folder: Path | None = settings.get_last_folder()
         self._info_font_size = 10
@@ -91,10 +92,23 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
         toolbar.addAction(self.open_folder_action)
 
-        stretch = QWidget(self)
-        stretch.setSizePolicy(QSizePolicy.Policy.Expanding,
-                              QSizePolicy.Policy.Expanding)
-        toolbar.addWidget(stretch)
+        stretch_left = QWidget(self)
+        stretch_left.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                   QSizePolicy.Policy.Expanding)
+        toolbar.addWidget(stretch_left)
+
+        self.title_label = QLabel("", self)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setStyleSheet("color: #f2f2f2; font-weight: 600;")
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                       QSizePolicy.Policy.Preferred)
+        self.title_label.setMinimumWidth(260)
+        toolbar.addWidget(self.title_label)
+
+        stretch_right = QWidget(self)
+        stretch_right.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                    QSizePolicy.Policy.Expanding)
+        toolbar.addWidget(stretch_right)
 
         # 창 제어 버튼(밝은 커스텀 아이콘)
         controls = QWidget(self)
@@ -239,6 +253,7 @@ class MainWindow(QMainWindow):
         path = self._images[self._current_index]
         self.canvas.show_image(path)
         self._update_image_info(path)
+        self._update_title_label(path)
         self._update_nav_buttons()
 
     def _show_prev_image(self) -> None:
@@ -303,6 +318,7 @@ class MainWindow(QMainWindow):
         self._has_image = False
         self.info_label.clear()
         self.info_label.setVisible(False)
+        self._update_title_label(None)
 
     def _info_html(self, resolution: str, file_size: str) -> str:
         size = max(int(self._status_icon_size / 1.5), 12)
@@ -315,6 +331,11 @@ class MainWindow(QMainWindow):
 
     def _icon_path(self, name: str) -> Path:
         return self._icons_dir / name
+
+    def _update_title_label(self, path: Path | None) -> None:
+        if not hasattr(self, "title_label"):
+            return
+        self.title_label.setText(path.name if path else "")
 
     def _make_window_button(self, icon: QIcon, slot) -> QToolButton:
         btn = QToolButton(self)
