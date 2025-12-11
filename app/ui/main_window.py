@@ -6,6 +6,7 @@ import sys
 import ctypes
 from pathlib import Path
 import random
+import uuid
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap, QKeySequence, QShortcut
@@ -28,7 +29,6 @@ from PyQt6.QtWidgets import (
     QMenu,
 )
 
-from app.services import settings  # legacy; will be phased out
 from app.services.fs_service import list_images
 from app.services.session_store import load_session, save_session
 from app.core.shortcuts import bind_delete, bind_image_navigation
@@ -709,10 +709,6 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= self.keyword_combo.count():
             return
         text = self.keyword_combo.itemText(index).strip()
-        if text.lower() == "none":
-            settings.set_last_keyword("")
-        else:
-            settings.set_last_keyword(text)
         self._session_state["last_keyword"] = text if text.lower() != "none" else ""
         save_session(self._session_state)
         current = self._images[self._current_index] if self._images else None
@@ -749,7 +745,6 @@ class MainWindow(QMainWindow):
         self._keywords = [kw for kw in self._keywords if kw != cleaned]
         self._save_keywords_file()
         self._populate_keywords_combo()
-        settings.set_last_keyword("")
         self._session_state["last_keyword"] = ""
         save_session(self._session_state)
         current = self._images[self._current_index] if self._images else None
