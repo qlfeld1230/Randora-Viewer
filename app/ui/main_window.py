@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon
+from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -15,8 +15,10 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QStatusBar,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
+    QStyle,
 )
 
 from app.services import settings
@@ -30,6 +32,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Randora Viewer")
+        # 기본 타이틀바 제거 후 커스텀 타이틀바 사용.
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self._icons_dir = Path(__file__).resolve(
         ).parent.parent / "resources" / "icons"
         icon_path = self._icon_path("Randora.ico")
@@ -56,6 +60,7 @@ class MainWindow(QMainWindow):
 
         self.nav_container.request_prev.connect(self._show_prev_image)
         self.nav_container.request_next.connect(self._show_next_image)
+        self._update_max_button_icon()
 
     def _create_actions(self) -> None:
         folder_icon = QIcon(str(self._icon_path("folder icon.png")))
@@ -63,9 +68,10 @@ class MainWindow(QMainWindow):
         self.open_folder_action.triggered.connect(self._on_open_folder)
 
     def _create_toolbar(self) -> None:
-        toolbar = QToolBar("Main Toolbar", self)
+        toolbar = TitleToolBar("Main Toolbar", self)
         self.toolbar = toolbar
         toolbar.setMovable(False)
+        toolbar.setFloatable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         toolbar.setIconSize(QSize(14, 14))
         toolbar.setStyleSheet(
@@ -80,9 +86,39 @@ class MainWindow(QMainWindow):
         )
         spacer = QWidget(self)
         spacer.setFixedWidth(6)  # manual left gap
-        spacer.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        spacer.setSizePolicy(QSizePolicy.Policy.Fixed,
+                             QSizePolicy.Policy.Fixed)
         toolbar.addWidget(spacer)
         toolbar.addAction(self.open_folder_action)
+
+        stretch = QWidget(self)
+        stretch.setSizePolicy(QSizePolicy.Policy.Expanding,
+                              QSizePolicy.Policy.Expanding)
+        toolbar.addWidget(stretch)
+
+        # 창 제어 버튼(밝은 커스텀 아이콘)
+        controls = QWidget(self)
+        controls_layout = QHBoxLayout(controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(0)
+
+        self.min_btn = self._make_window_button(
+            self._window_control_icon("min"),
+            self.showMinimized,
+        )
+        self.max_btn = self._make_window_button(
+            self._window_control_icon("max"),
+            self._toggle_max_restore,
+        )
+        self.close_btn = self._make_window_button(
+            self._window_control_icon("close"),
+            self.close,
+        )
+
+        for btn in (self.min_btn, self.max_btn, self.close_btn):
+            controls_layout.addWidget(btn)
+
+        toolbar.addWidget(controls)
         self.addToolBar(toolbar)
 
     def _create_statusbar(self) -> None:
@@ -213,9 +249,24 @@ class MainWindow(QMainWindow):
         if self._images and self._current_index < len(self._images) - 1:
             self._show_image_at_index(self._current_index + 1)
 
+    def _toggle_max_restore(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+        self._update_max_button_icon()
+
+    def _update_max_button_icon(self) -> None:
+        if not hasattr(self, "max_btn"):
+            return
+        icon = self._window_control_icon(
+            "restore" if self.isMaximized() else "max")
+        self.max_btn.setIcon(icon)
+
     def _update_nav_buttons(self) -> None:
         has_prev = self._current_index > 0
-        has_next = bool(self._images) and self._current_index < len(self._images) - 1
+        has_next = bool(self._images) and self._current_index < len(
+            self._images) - 1
         self.nav_container.set_enabled(has_prev, has_next)
 
     def _show_status(self, text: str) -> None:
@@ -265,6 +316,53 @@ class MainWindow(QMainWindow):
     def _icon_path(self, name: str) -> Path:
         return self._icons_dir / name
 
+    def _make_window_button(self, icon: QIcon, slot) -> QToolButton:
+        btn = QToolButton(self)
+        btn.setIcon(icon)
+        btn.setAutoRaise(True)
+        btn.setCursor(Qt.CursorShape.ArrowCursor)
+        btn.clicked.connect(slot)
+        btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        btn.setFixedSize(QSize(28, 24))
+        btn.setStyleSheet(
+            """
+            QToolButton {
+                background: transparent;
+                border: none;
+                color: #ffffff;
+            }
+            QToolButton:hover {
+                background: rgba(255, 255, 255, 0.28);
+            }
+            QToolButton:pressed {
+                background: rgba(255, 255, 255, 0.36);
+            }
+            """
+        )
+        return btn
+
+    def _window_control_icon(self, kind: str) -> QIcon:
+        size = 14
+        pm = QPixmap(size, size)
+        pm.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pm)
+        pen = QPen(Qt.GlobalColor.white)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        if kind == "min":
+            y = size // 2
+            painter.drawLine(3, y, size - 3, y)
+        elif kind == "max":
+            painter.drawRect(2, 2, size - 4, size - 4)
+        elif kind == "restore":
+            painter.drawRect(3, 4, size - 6, size - 6)
+            painter.drawRect(1, 1, size - 6, size - 6)
+        elif kind == "close":
+            painter.drawLine(3, 3, size - 3, size - 3)
+            painter.drawLine(size - 3, 3, 3, size - 3)
+        painter.end()
+        return QIcon(pm)
+
     @staticmethod
     def _format_size(num_bytes: int) -> str:
         step = 1024
@@ -275,6 +373,64 @@ class MainWindow(QMainWindow):
                 return f"{size:.2f}{unit}" if unit != "B" else f"{int(size)}B"
             size /= step
         return f"{size:.2f}PB"
+
+
+class TitleToolBar(QToolBar):
+    """Frameless 창에서 타이틀바 역할을 하는 툴바."""
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(title, parent)
+        self._drag_pos = None
+        self._win_start = None
+        self.setMouseTracking(True)
+
+    def _is_interactive_hit(self, pos) -> bool:
+        widget = self.childAt(pos)
+        return isinstance(widget, QToolButton)
+
+    def _try_system_move(self) -> bool:
+        window = self.window()
+        if window and window.windowHandle():
+            handle = window.windowHandle()
+            try:
+                return bool(handle.startSystemMove())
+            except Exception:
+                return False
+        return False
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if isinstance(event, QMouseEvent) and event.button() == Qt.MouseButton.LeftButton:
+            if not self._is_interactive_hit(event.pos()):
+                if not self._try_system_move():
+                    self._drag_pos = event.globalPosition().toPoint()
+                    self._win_start = self.window().frameGeometry().topLeft()
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+        if self._drag_pos and isinstance(event, QMouseEvent):
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            if self._win_start:
+                self.window().move(self._win_start + delta)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        self._drag_pos = None
+        self._win_start = None
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[override]
+        if isinstance(event, QMouseEvent) and event.button() == Qt.MouseButton.LeftButton:
+            if not self._is_interactive_hit(event.pos()):
+                window = self.window()
+                if hasattr(window, "_toggle_max_restore"):
+                    window._toggle_max_restore()  # type: ignore[attr-defined]
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
 
 
 class NavigationContainer(QWidget):
