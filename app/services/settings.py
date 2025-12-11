@@ -20,3 +20,11 @@ def get_last_folder() -> Path | None:
 
 def set_last_folder(path: Path) -> None:
     _settings().setValue("last_folder", str(path))
+
+
+def get_last_keyword() -> str:
+    return _settings().value("last_keyword", "", str)
+
+
+def set_last_keyword(keyword: str) -> None:
+    _settings().setValue("last_keyword", keyword)

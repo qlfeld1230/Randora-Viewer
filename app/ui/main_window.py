@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 from app.services import settings
 from app.services.fs_service import list_images
 from app.core.shortcuts import bind_delete, bind_image_navigation
-from app.ui.dialogs import SettingsDialog
+from app.ui.dialogs import KeywordDialog
 from app.ui.image_canvas import ImageCanvas
 
 
@@ -57,10 +57,14 @@ class MainWindow(QMainWindow):
         self._status_icon_size = 18  # temporary, recalculated in _create_statusbar
         self._statusbar_height = 45
         self._has_image: bool = False
+        self._all_images: list[Path] = []
         self._images: list[Path] = []
         self._current_index: int = 0
         self._sort_mode: str = "date"  # date | name | random
         self._sort_ascending: bool = False  # False: 내림차순, True: 오름차순
+        self._keywords_path = self._icons_dir.parent / "keywords.txt"
+        self._keywords: list[str] = self._load_keywords()
+        self._last_keyword: str = settings.get_last_keyword()
 
         self._create_actions()
         self._create_toolbar()
@@ -150,10 +154,13 @@ class MainWindow(QMainWindow):
 
         # 키워드(추가 예정) 영역 - 초기 None 항목
         self.keyword_combo = QComboBox(self)
-        self.keyword_combo.addItem(" None")
         self.keyword_combo.setMinimumWidth(90)
         self.keyword_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
         toolbar.addWidget(self.keyword_combo)
+        self._populate_keywords_combo()
+        self.keyword_combo.currentIndexChanged.connect(self._on_keyword_changed)
+        self.keyword_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.keyword_combo.customContextMenuRequested.connect(self._on_keyword_context_menu)
         spacer_keywords = QWidget(self)
         spacer_keywords.setFixedWidth(6)
         spacer_keywords.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -305,9 +312,8 @@ class MainWindow(QMainWindow):
             target = images[0]
             self._current_index = 0
 
-        self._images = images
-        self._apply_sort(self._sort_mode, target, ascending=self._sort_ascending)
-        self._show_image_at_index(self._current_index)
+        self._all_images = images
+        self._rebuild_images(target)
         self._last_folder = folder
         settings.set_last_folder(self._last_folder)
         self._show_status(f"{len(images)}개 이미지 로드")
@@ -338,6 +344,32 @@ class MainWindow(QMainWindow):
         if self._images and self._current_index < len(self._images) - 1:
             self._show_image_at_index(self._current_index + 1)
 
+    def _rebuild_images(self, current: Path | None) -> None:
+        """정렬/필터(키워드) 적용 후 이미지 갱신."""
+        if not self._all_images:
+            self._images = []
+            self.canvas.clear_image()
+            self._set_info_placeholder()
+            self._update_nav_buttons()
+            return
+        self._images = list(self._all_images)
+        self._apply_sort(self._sort_mode, current, ascending=self._sort_ascending)
+        kw = self._current_keyword()
+        if kw:
+            kw_lower = kw.lower()
+            self._images = [p for p in self._images if p.name.lower().startswith(kw_lower)]
+        if not self._images:
+            self.canvas.clear_image()
+            self._set_info_placeholder()
+            self._update_nav_buttons()
+            return
+        # 현재가 필터에 없으면 처음으로
+        if current and current in self._images:
+            self._current_index = self._images.index(current)
+        else:
+            self._current_index = 0
+        self._show_image_at_index(self._current_index)
+
     def _on_sort_changed(self, index: int) -> None:
         if not self._images:
             return
@@ -345,10 +377,8 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= len(modes):
             return
         self._sort_mode = modes[index]
-        current = self._images[self._current_index]
-        self._apply_sort(self._sort_mode, current, ascending=self._sort_ascending)
-        self._current_index = 0
-        self._show_image_at_index(self._current_index)
+        current = self._images[self._current_index] if self._images else None
+        self._rebuild_images(current)
         msg = {
             "date": f"날짜순({'오름차순' if self._sort_ascending else '최신 우선'}) 정렬",
             "name": f"이름순({'오름차순' if self._sort_ascending else '내림차순'}) 정렬",
@@ -421,10 +451,12 @@ class MainWindow(QMainWindow):
             # 랜덤은 정렬 방향에 영향받지 않음.
             return
         current = self._images[self._current_index]
-        self._apply_sort(self._sort_mode, current, ascending=self._sort_ascending)
-        self._current_index = 0
-        self._show_image_at_index(self._current_index)
+        self._rebuild_images(current)
         self._show_status("오름차순 정렬" if checked else "내림차순 정렬")
+
+    def _open_keyword_dialog(self) -> None:
+        dlg = KeywordDialog(self._keywords, self)
+        dlg.exec()
 
     def _toggle_max_restore(self) -> None:
         if self.isMaximized():
@@ -501,7 +533,17 @@ class MainWindow(QMainWindow):
     def _update_title_label(self, path: Path | None) -> None:
         if not hasattr(self, "title_label"):
             return
-        self.title_label.setText(path.name if path else "")
+        if not path:
+            self.title_label.setText("")
+            self.title_label.setToolTip("")
+            return
+        base = path.stem
+        ext = path.suffix
+        display = f"{base}{ext}"
+        if len(base) > 40:
+            display = f"{base[:40]}...{ext}"
+        self.title_label.setText(display)
+        self.title_label.setToolTip(path.name)
 
     def _make_window_button(self, icon: QIcon, slot) -> QToolButton:
         btn = QToolButton(self)
@@ -555,14 +597,140 @@ class MainWindow(QMainWindow):
 
     def _show_settings_menu(self) -> None:
         menu = QMenu(self)
-        menu.addAction("키워드 추가")
-        menu.addAction("일괄 수정")
+        action_keyword = menu.addAction("키워드 추가")
+        action_batch = menu.addAction("일괄 수정")
+        action_keyword.triggered.connect(self._open_keyword_dialog)
         pos = self.settings_btn.mapToGlobal(
             self.settings_btn.rect().bottomLeft())
         menu.exec(pos)
 
+    def _open_keyword_dialog(self) -> None:
+        dlg = KeywordDialog(self._keywords, self)
+        dlg.keyword_added.connect(self._add_keyword)
+        dlg.keyword_deleted.connect(self._delete_keyword)
+        dlg.exec()
+
+    def _add_keyword(self, keyword: str) -> None:
+        cleaned = keyword.strip()
+        if not cleaned:
+            return
+        if cleaned.lower() == "none" or cleaned in self._keywords:
+            return
+        self._keywords.append(cleaned)
+        self.keyword_combo.addItem(f" {cleaned}")
+        self._save_keywords_file()
+        # 새로 추가한 키워드를 바로 선택하고 기억
+        self.keyword_combo.setCurrentIndex(self.keyword_combo.count() - 1)
+        settings.set_last_keyword(cleaned)
+
+    def _load_keywords(self) -> list[str]:
+        try:
+            self._keywords_path.parent.mkdir(parents=True, exist_ok=True)
+            if not self._keywords_path.exists():
+                # 파일이 없으면 기본 None만 저장
+                self._keywords_path.write_text("None\n", encoding="utf-8")
+            lines = [
+                ln.strip()
+                for ln in self._keywords_path.read_text(encoding="utf-8").splitlines()
+            ]
+            # 기본 None 추가
+            seen: list[str] = ["None"]
+            for kw in lines:
+                if not kw:
+                    continue
+                if kw.lower() == "none":
+                    continue
+                if kw not in seen:
+                    seen.append(kw)
+            # 파일이 비었거나 None만 있는 경우에도 최소 None 유지
+            if not seen:
+                seen = ["None"]
+                self._keywords_path.write_text("None\n", encoding="utf-8")
+            return seen
+        except Exception:
+            return []
+
+    def _save_keywords_file(self) -> None:
+        try:
+            self._keywords_path.parent.mkdir(parents=True, exist_ok=True)
+            to_save = ["None"] + [kw for kw in self._keywords if kw.lower() != "none"]
+            if not to_save:
+                to_save = ["None"]
+            content = "\n".join(to_save) + ("\n" if to_save else "")
+            self._keywords_path.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
+
+    def _populate_keywords_combo(self) -> None:
+        self.keyword_combo.clear()
+        self.keyword_combo.addItem(" None")
+        for kw in self._keywords:
+            if kw.lower() == "none":
+                continue
+            self.keyword_combo.addItem(f" {kw}")
+        # 이전 선택 복원
+        if self._last_keyword:
+            target_text = f" {self._last_keyword}"
+            idx = self.keyword_combo.findText(target_text)
+            if idx != -1:
+                self.keyword_combo.setCurrentIndex(idx)
+
+    def _on_keyword_changed(self, index: int) -> None:
+        if index < 0 or index >= self.keyword_combo.count():
+            return
+        text = self.keyword_combo.itemText(index).strip()
+        if text.lower() == "none":
+            settings.set_last_keyword("")
+        else:
+            settings.set_last_keyword(text)
+        current = self._images[self._current_index] if self._images else None
+        self._rebuild_images(current)
+
+    def _current_keyword(self) -> str | None:
+        if not hasattr(self, "keyword_combo"):
+            return None
+        text = self.keyword_combo.currentText().strip()
+        if text.lower() == "none" or text == "":
+            return None
+        return text
+
+    def _on_keyword_context_menu(self, pos) -> None:
+        index = self.keyword_combo.currentIndex()
+        if index <= 0:  # "None" 또는 없음
+            return
+        text = self.keyword_combo.itemText(index).strip()
+        if not text or text.lower() == "none":
+            return
+        menu = QMenu(self)
+        delete_action = menu.addAction("삭제")
+        global_pos = self.keyword_combo.mapToGlobal(pos)
+        action = menu.exec(global_pos)
+        if action == delete_action:
+            self._delete_keyword(text)
+
+    def _delete_keyword(self, keyword: str) -> None:
+        cleaned = keyword.strip()
+        if cleaned.lower() == "none":
+            return
+        if cleaned not in self._keywords:
+            return
+        self._keywords = [kw for kw in self._keywords if kw != cleaned]
+        self._save_keywords_file()
+        self._populate_keywords_combo()
+        settings.set_last_keyword("")
+        current = self._images[self._current_index] if self._images else None
+        self._rebuild_images(current)
     def _send_to_trash(self, path: Path) -> None:
-        """Delete 파일을 휴지통으로 보낸다(Windows), 그 외 OS는 즉시 삭제."""
+        """Delete 파일을 휴지통으로 보낸다. 실패 시 삭제로 폴백."""
+        try:
+            import send2trash  # type: ignore
+
+            send2trash.send2trash(str(path))
+            return
+        except Exception:
+            # send2trash 미설치 또는 실패 시 OS별 기본 처리
+            pass
+
         if sys.platform.startswith("win"):
             # SHFileOperationW 사용
             FO_DELETE = 3
@@ -582,7 +750,6 @@ class MainWindow(QMainWindow):
                     ("lpszProgressTitle", ctypes.c_wchar_p),
                 ]
 
-            # SHFileOperationW expects double-null-terminated list.
             p_from = str(path) + "\0\0"
             op = SHFILEOPSTRUCT(
                 hwnd=int(self.winId()),
