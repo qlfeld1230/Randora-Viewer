@@ -27,10 +27,3 @@ ENV/
 env/
 .env/
 .env.bak
-app/__pycache__/main.cpython-311.pyc
-app/core/__pycache__/shortcuts.cpython-311.pyc
-app/services/__pycache__/fs_service.cpython-311.pyc
-app/services/__pycache__/session_store.cpython-311.pyc
-app/ui/__pycache__/dialogs.cpython-311.pyc
-app/ui/__pycache__/image_canvas.cpython-311.pyc
-app/ui/__pycache__/main_window.cpython-311.pyc
