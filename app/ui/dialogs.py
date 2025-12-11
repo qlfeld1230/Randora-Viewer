@@ -42,6 +42,7 @@ class KeywordDialog(QDialog):
         self.delete_btn = QPushButton("삭제", self)
         self.delete_btn.setEnabled(False)
         self.delete_btn.clicked.connect(self._on_delete)
+        self.delete_btn.setStyleSheet("color: #000000; background: #dcdcdc;")
         header_layout.addWidget(self.delete_btn, 0)
         main_layout.addWidget(header)
 
@@ -61,12 +62,14 @@ class KeywordDialog(QDialog):
         self.input.setMinimumHeight(36)
         self.input.setPlaceholderText("키워드를 입력해주세요")
         self.input.textChanged.connect(self._validate_input)
+        self.input.setStyleSheet("color: #000000; background: #dcdcdc;")
         input_layout.addWidget(self.input, 3)
 
         self.add_btn = QPushButton("추가", self)
         self.add_btn.setMinimumHeight(36)
         self.add_btn.setEnabled(False)
         self.add_btn.clicked.connect(self._on_add)
+        self.add_btn.setStyleSheet("color: #000000; background: #dcdcdc;")
         input_layout.addWidget(self.add_btn, 1)
 
         main_layout.addWidget(input_container)
@@ -153,11 +156,13 @@ class BatchEditDialog(QDialog):
         self.path_display = QLineEdit(self)
         self.path_display.setReadOnly(True)
         self.path_display.setPlaceholderText("경로를 선택하세요")
+        self.path_display.setStyleSheet("color: #000000; background: #dcdcdc;")
         if initial_path:
             self.path_display.setText(initial_path)
         path_layout.addWidget(self.path_display, 1)
         self.path_btn = QPushButton("경로 선택", self)
         self.path_btn.clicked.connect(self._choose_path)
+        self.path_btn.setStyleSheet("color: #000000; background: #dcdcdc;")
         path_layout.addWidget(self.path_btn, 0)
         layout.addWidget(path_container)
 
@@ -170,6 +175,7 @@ class BatchEditDialog(QDialog):
         self.number_btn.setMinimumHeight(36)
         self.number_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.number_btn.clicked.connect(self._on_number)
+        self.number_btn.setStyleSheet("color: #000000; background: #dcdcdc;")
         number_layout.addWidget(self.number_btn)
         layout.addWidget(number_container)
 
@@ -182,12 +188,14 @@ class BatchEditDialog(QDialog):
         self.input.setMinimumHeight(36)
         self.input.setPlaceholderText("키워드를 입력해주세요")
         self.input.textChanged.connect(self._validate_input)
+        self.input.setStyleSheet("color: #000000; background: #dcdcdc;")
         input_layout.addWidget(self.input, 1)
 
         self.edit_btn = QPushButton("수정", self)
         self.edit_btn.setMinimumHeight(36)
         self.edit_btn.setEnabled(False)
         self.edit_btn.clicked.connect(self._on_edit)
+        self.edit_btn.setStyleSheet("color: #000000; background: #dcdcdc;")
         input_layout.addWidget(self.edit_btn, 0)
 
         layout.addWidget(input_container)

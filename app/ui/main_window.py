@@ -610,6 +610,12 @@ class MainWindow(QMainWindow):
 
     def _show_settings_menu(self) -> None:
         menu = QMenu(self)
+        menu.setStyleSheet(
+            """
+            QMenu { background: #282727; color: #f2f2f2; }
+            QMenu::item:selected { background: #3a3939; }
+            """
+        )
         action_keyword = menu.addAction("키워드 추가")
         action_batch = menu.addAction("일괄 수정")
         action_keyword.triggered.connect(self._open_keyword_dialog)
