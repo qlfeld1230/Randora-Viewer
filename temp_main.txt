@@ -1,7 +1,4 @@
-﻿"""
- QApplication??援ъ꽦?섍퀬 硫붿씤 ?덈룄?곕? 援щ룞?섎뒗 ?곗쿂 紐⑤뱢
-"""
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 from pathlib import Path
