@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import ctypes
 from pathlib import Path
+import random
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QStyle,
+    QCheckBox,
 )
 
 from app.services import settings
@@ -54,6 +56,7 @@ class MainWindow(QMainWindow):
         self._has_image: bool = False
         self._images: list[Path] = []
         self._current_index: int = 0
+        self._random_mode: bool = False
 
         self._create_actions()
         self._create_toolbar()
@@ -102,6 +105,12 @@ class MainWindow(QMainWindow):
                              QSizePolicy.Policy.Fixed)
         toolbar.addWidget(spacer)
         toolbar.addAction(self.open_folder_action)
+
+        self.random_toggle = QCheckBox("Random", self)
+        self.random_toggle.setChecked(False)
+        self.random_toggle.setStyleSheet("color: #f2f2f2; margin-left: 6px;")
+        self.random_toggle.toggled.connect(self._on_random_toggled)
+        toolbar.addWidget(self.random_toggle)
 
         stretch_left = QWidget(self)
         stretch_left.setSizePolicy(QSizePolicy.Policy.Expanding,
@@ -259,6 +268,8 @@ class MainWindow(QMainWindow):
             self._current_index = 0
 
         self._images = images
+        if self._random_mode:
+            self._shuffle_keep_current(target)
         self._show_image_at_index(self._current_index)
         self._last_folder = folder
         settings.set_last_folder(self._last_folder)
@@ -285,6 +296,22 @@ class MainWindow(QMainWindow):
         if self._images and self._current_index < len(self._images) - 1:
             self._show_image_at_index(self._current_index + 1)
 
+    def _on_random_toggled(self, checked: bool) -> None:
+        self._random_mode = checked
+        if not self._images:
+            return
+        current = self._images[self._current_index]
+        if checked:
+            self._shuffle_keep_current(current)
+            self._current_index = 0
+            self._show_image_at_index(self._current_index)
+            self._show_status("랜덤 순서로 전환")
+        else:
+            self._images = sorted(self._images)
+            self._current_index = self._find_index(current)
+            self._show_image_at_index(self._current_index)
+            self._show_status("순차 순서로 전환")
+
     def _delete_current_image(self) -> None:
         if not self._images:
             return
@@ -306,6 +333,20 @@ class MainWindow(QMainWindow):
             self.canvas.clear_image()
             self._set_info_placeholder()
             self._show_status("모든 이미지가 삭제되었습니다")
+
+    def _shuffle_keep_current(self, current: Path) -> None:
+        """현재 이미지는 유지하고 나머지를 랜덤 섞기."""
+        resolved = current.resolve()
+        rest = [p for p in self._images if p.resolve() != resolved]
+        random.shuffle(rest)
+        self._images = [current] + rest
+
+    def _find_index(self, path: Path) -> int:
+        resolved = path.resolve()
+        for idx, p in enumerate(self._images):
+            if p.resolve() == resolved:
+                return idx
+        return 0
 
     def _toggle_max_restore(self) -> None:
         if self.isMaximized():
