@@ -7,6 +7,7 @@ import ctypes
 from pathlib import Path
 import random
 import uuid
+import re
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap, QKeySequence, QShortcut
@@ -429,7 +430,11 @@ class MainWindow(QMainWindow):
         if mode == "random":
             random.shuffle(rest)
         elif mode == "name":
-            rest.sort(key=lambda p: p.name.lower(), reverse=not ascending)
+            def natural_key(path: Path):
+                parts = re.split(r"(\d+)", path.name.lower())
+                return [int(part) if part.isdigit() else part for part in parts]
+
+            rest.sort(key=natural_key, reverse=not ascending)
         else:  # date
             rest.sort(
                 key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
