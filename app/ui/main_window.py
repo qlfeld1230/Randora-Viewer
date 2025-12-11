@@ -32,12 +32,17 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Randora Viewer")
         self._icons_dir = Path(__file__).resolve(
         ).parent.parent / "resources" / "icons"
+        icon_path = self._icon_path("Randora.ico")
+        if not icon_path.exists():
+            icon_path = self._icon_path("Randora.png")
+        self.setWindowIcon(QIcon(str(icon_path)))
         self.canvas = ImageCanvas(self)
         self.nav_container = NavigationContainer(self.canvas, self._icons_dir)
         self._last_folder: Path | None = settings.get_last_folder()
         self._info_font_size = 10
         self._status_icon_size = 18  # temporary, recalculated in _create_statusbar
         self._statusbar_height = 45
+        self._has_image: bool = False
         self._images: list[Path] = []
         self._current_index: int = 0
 
@@ -45,6 +50,7 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_statusbar()
         self._init_layout()
+        self._update_nav_buttons()  # 초기 상태에서는 양쪽 네비게이션을 비활성화
         # Set a generous default viewer size to minimize letterboxing on load.
         self.resize(2560, 1440)
 
@@ -98,6 +104,7 @@ class MainWindow(QMainWindow):
         self.info_label.setStyleSheet("color: #bbb;")
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.info_label.setTextFormat(Qt.TextFormat.RichText)
+        self.info_label.setVisible(False)
         status.addPermanentWidget(self.info_label, 1)
         self._set_info_placeholder()
 
@@ -208,7 +215,7 @@ class MainWindow(QMainWindow):
 
     def _update_nav_buttons(self) -> None:
         has_prev = self._current_index > 0
-        has_next = self._images and self._current_index < len(self._images) - 1
+        has_next = bool(self._images) and self._current_index < len(self._images) - 1
         self.nav_container.set_enabled(has_prev, has_next)
 
     def _show_status(self, text: str) -> None:
@@ -223,8 +230,10 @@ class MainWindow(QMainWindow):
         if not size:
             self._set_info_placeholder()
             return
+        self._has_image = True
         resolution = f"{size.width()} x {size.height()}"
         file_size = self._format_size(path.stat().st_size)
+        self.info_label.setVisible(True)
         self.info_label.setText(self._info_html(resolution, file_size))
 
     def toggle_fullscreen(self) -> None:
@@ -240,7 +249,9 @@ class MainWindow(QMainWindow):
             self.fullscreen_icon.setToolTip("전체화면 해제")
 
     def _set_info_placeholder(self) -> None:
-        self.info_label.setText(self._info_html("0000 x 0000", "0B"))
+        self._has_image = False
+        self.info_label.clear()
+        self.info_label.setVisible(False)
 
     def _info_html(self, resolution: str, file_size: str) -> str:
         size = max(int(self._status_icon_size / 1.5), 12)
@@ -339,6 +350,10 @@ class NavigationContainer(QWidget):
     def set_enabled(self, has_prev: bool, has_next: bool) -> None:
         self.prev_btn.set_enabled(has_prev)
         self.next_btn.set_enabled(has_next)
+        self.prev_btn.setVisible(has_prev)
+        self.prev_btn.setEnabled(has_prev)
+        self.next_btn.setVisible(has_next)
+        self.next_btn.setEnabled(has_next)
 
     def enterEvent(self, event) -> None:  # type: ignore[override]
         self._set_buttons_visible(True)
@@ -361,6 +376,14 @@ class NavigationContainer(QWidget):
         duration = 0 if instant else self._fade_duration
 
         for btn in (self.prev_btn, self.next_btn):
+            if show:
+                # 비활성 버튼은 그대로 숨김 유지.
+                if not btn.isEnabled():
+                    btn.setVisible(False)
+                    continue
+                btn.setVisible(True)
+            elif not btn.isVisible():
+                continue
             effect = btn.graphicsEffect()
             if effect is None:
                 effect = QGraphicsOpacityEffect(btn)

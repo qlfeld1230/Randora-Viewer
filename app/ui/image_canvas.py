@@ -6,7 +6,14 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QLabel, QSizePolicy, QWidget
+from PyQt6.QtWidgets import (
+    QLabel,
+    QSizePolicy,
+    QWidget,
+    QStyle,
+    QStyleOption,
+    QStylePainter,
+)
 
 
 class ImageCanvas(QLabel):
@@ -15,13 +22,17 @@ class ImageCanvas(QLabel):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._source: QPixmap | None = None
+        self._scaled: QPixmap | None = None
         self._current_path: Path | None = None
+        # 중앙 정렬로 레터박스가 균등하도록 설정.
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(QSize(200, 200))
         # Use the window palette color so letterbox areas blend with the app background.
         self.setStyleSheet("background: palette(window); color: #888;")
         self.setText("이미지를 선택하세요")
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setMargin(0)
 
     def show_image(self, path: Path) -> None:
         """Load image from disk and display it."""
@@ -29,7 +40,9 @@ class ImageCanvas(QLabel):
         if pixmap.isNull():
             self.setText("이미지를 불러올 수 없습니다")
             self._source = None
+            self._scaled = None
             self._current_path = None
+            self.update()
             return
         self._source = pixmap
         self._current_path = path
@@ -37,9 +50,10 @@ class ImageCanvas(QLabel):
 
     def clear_image(self) -> None:
         self._source = None
+        self._scaled = None
         self._current_path = None
         self.setText("이미지가 없습니다")
-        self.setPixmap(QPixmap())
+        self.update()
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -48,12 +62,33 @@ class ImageCanvas(QLabel):
     def _update_scaled(self) -> None:
         if not self._source:
             return
-        scaled = self._source.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,  # fit whole image; may add letterboxing
+        available = self.contentsRect().size()
+        if available.width() <= 0 or available.height() <= 0:
+            return
+        self._scaled = self._source.scaled(
+            available,
+            Qt.AspectRatioMode.KeepAspectRatio,  # 전체 이미지 표시, 균등 레터박스
             Qt.TransformationMode.SmoothTransformation,
         )
-        self.setPixmap(scaled)
+        self.setText("")  # 텍스트 제거
+        self.update()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        # 배경(스타일)을 먼저 그린다.
+        opt = QStyleOption()
+        opt.initFrom(self)
+        painter = QStylePainter(self)
+        painter.drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt)
+
+        if self._scaled:
+            rect = self.contentsRect()
+            x = rect.x() + (rect.width() - self._scaled.width()) // 2
+            y = rect.y() + (rect.height() - self._scaled.height()) // 2
+            painter.drawPixmap(x, y, self._scaled)
+            return
+
+        # 이미지 없을 때는 QLabel 기본 동작으로 텍스트 표시.
+        super().paintEvent(event)
 
     @property
     def source_size(self) -> QSize | None:
