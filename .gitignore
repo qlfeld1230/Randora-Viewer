@@ -27,3 +27,7 @@ ENV/
 env/
 .env/
 .env.bak
+
+#keywords
+keywords.txt/
+session.json/
