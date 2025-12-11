@@ -28,8 +28,9 @@ from PyQt6.QtWidgets import (
     QMenu,
 )
 
-from app.services import settings
+from app.services import settings  # legacy; will be phased out
 from app.services.fs_service import list_images
+from app.services.session_store import load_session, save_session
 from app.core.shortcuts import bind_delete, bind_image_navigation
 from app.ui.dialogs import KeywordDialog
 from app.ui.image_canvas import ImageCanvas
@@ -52,7 +53,8 @@ class MainWindow(QMainWindow):
         self.canvas = ImageCanvas(self)
         self.canvas.request_open.connect(self._on_open_folder)
         self.nav_container = NavigationContainer(self.canvas, self._icons_dir)
-        self._last_folder: Path | None = settings.get_last_folder()
+        session = load_session()
+        self._last_folder: Path | None = Path(session["last_folder"]) if session.get("last_folder") else None
         self._info_font_size = 10
         self._status_icon_size = 18  # temporary, recalculated in _create_statusbar
         self._statusbar_height = 45
@@ -60,11 +62,12 @@ class MainWindow(QMainWindow):
         self._all_images: list[Path] = []
         self._images: list[Path] = []
         self._current_index: int = 0
-        self._sort_mode: str = "date"  # date | name | random
-        self._sort_ascending: bool = False  # False: 내림차순, True: 오름차순
+        self._sort_mode: str = session.get("sort_mode", "date")  # date | name | random
+        self._sort_ascending: bool = bool(session.get("sort_ascending", False))
         self._keywords_path = self._icons_dir.parent / "keywords.txt"
         self._keywords: list[str] = self._load_keywords()
-        self._last_keyword: str = settings.get_last_keyword()
+        self._last_keyword: str = session.get("last_keyword", "")
+        self._session_state = session
 
         self._create_actions()
         self._create_toolbar()
@@ -92,6 +95,8 @@ class MainWindow(QMainWindow):
         self._shortcut_exit_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._shortcut_exit_fullscreen.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._shortcut_exit_fullscreen.activated.connect(self._exit_fullscreen)
+        # 정렬/ASC 초기화 (세션값 반영)
+        self._init_sort_controls()
 
         # 이전 폴더 자동 로드
         if self._last_folder and self._last_folder.exists():
@@ -145,12 +150,10 @@ class MainWindow(QMainWindow):
         sort_layout.addStretch(1)
         self.sort_combo = QComboBox(self)
         self.sort_combo.addItems([" Date", " Name", " Random"])
-        self.sort_combo.setCurrentIndex(0)
         self.sort_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
         self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
         sort_layout.addWidget(self.sort_combo, alignment=Qt.AlignmentFlag.AlignCenter)
         self.sort_dir_checkbox = QCheckBox("Asc", self)
-        self.sort_dir_checkbox.setChecked(False)
         self.sort_dir_checkbox.setStyleSheet("color: #f2f2f2; background: transparent;")
         self.sort_dir_checkbox.toggled.connect(self._on_sort_direction_toggled)
         sort_layout.addWidget(self.sort_dir_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -311,6 +314,7 @@ class MainWindow(QMainWindow):
             return
 
         if not images:
+            self._all_images = []
             self._images = []
             self.canvas.clear_image()
             self._set_info_placeholder()
@@ -333,7 +337,8 @@ class MainWindow(QMainWindow):
         self._all_images = images
         self._rebuild_images(target)
         self._last_folder = folder
-        settings.set_last_folder(self._last_folder)
+        self._session_state["last_folder"] = str(self._last_folder)
+        save_session(self._session_state)
         self._show_status(f"{len(images)}개 이미지 로드")
 
     def _show_image_at_index(self, index: int) -> None:
@@ -392,6 +397,9 @@ class MainWindow(QMainWindow):
         self._sort_mode = modes[index]
         current = self._images[self._current_index] if self._images else None
         self._rebuild_images(current)
+        self._session_state["sort_mode"] = self._sort_mode
+        self._session_state["sort_ascending"] = self._sort_ascending
+        save_session(self._session_state)
         msg = {
             "date": f"날짜순({'오름차순' if self._sort_ascending else '최신 우선'}) 정렬",
             "name": f"이름순({'오름차순' if self._sort_ascending else '내림차순'}) 정렬",
@@ -466,6 +474,8 @@ class MainWindow(QMainWindow):
         current = self._images[self._current_index]
         self._rebuild_images(current)
         self._show_status("오름차순 정렬" if checked else "내림차순 정렬")
+        self._session_state["sort_ascending"] = self._sort_ascending
+        save_session(self._session_state)
 
     def _open_keyword_dialog(self) -> None:
         dlg = KeywordDialog(self._keywords, self)
@@ -497,6 +507,18 @@ class MainWindow(QMainWindow):
             status.showMessage(text, 3000)
         else:
             print(text)
+
+    def _init_sort_controls(self) -> None:
+        mode_to_index = {"date": 0, "name": 1, "random": 2}
+        idx = mode_to_index.get(self._sort_mode, 0)
+        # 시그널 차단하여 초기 설정 시 rebuild가 중복 호출되지 않도록 함.
+        self.sort_combo.blockSignals(True)
+        self.sort_combo.setCurrentIndex(idx)
+        self.sort_combo.blockSignals(False)
+
+        self.sort_dir_checkbox.blockSignals(True)
+        self.sort_dir_checkbox.setChecked(self._sort_ascending)
+        self.sort_dir_checkbox.blockSignals(False)
 
     def _update_image_info(self, path: Path) -> None:
         size = self.canvas.source_size
@@ -634,6 +656,8 @@ class MainWindow(QMainWindow):
         # 새로 추가한 키워드를 바로 선택하고 기억
         self.keyword_combo.setCurrentIndex(self.keyword_combo.count() - 1)
         settings.set_last_keyword(cleaned)
+        self._session_state["last_keyword"] = cleaned
+        save_session(self._session_state)
 
     def _load_keywords(self) -> list[str]:
         try:
@@ -695,6 +719,8 @@ class MainWindow(QMainWindow):
             settings.set_last_keyword("")
         else:
             settings.set_last_keyword(text)
+        self._session_state["last_keyword"] = text if text.lower() != "none" else ""
+        save_session(self._session_state)
         current = self._images[self._current_index] if self._images else None
         self._rebuild_images(current)
 
@@ -730,6 +756,8 @@ class MainWindow(QMainWindow):
         self._save_keywords_file()
         self._populate_keywords_combo()
         settings.set_last_keyword("")
+        self._session_state["last_keyword"] = ""
+        save_session(self._session_state)
         current = self._images[self._current_index] if self._images else None
         self._rebuild_images(current)
     def _send_to_trash(self, path: Path) -> None:
