@@ -8,7 +8,7 @@ from pathlib import Path
 import random
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -84,6 +84,26 @@ class MainWindow(QMainWindow):
         self._delete_shortcut = bind_delete(
             self.nav_container, self._delete_current_image
         )
+        # 전체화면 단축키
+        self._shortcut_fullscreen_toggle = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
+        self._shortcut_fullscreen_toggle.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._shortcut_fullscreen_toggle.activated.connect(self.toggle_fullscreen)
+
+        self._shortcut_exit_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self._shortcut_exit_fullscreen.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._shortcut_exit_fullscreen.activated.connect(self._exit_fullscreen)
+
+        # 이전 폴더 자동 로드
+        if self._last_folder and self._last_folder.exists():
+            try:
+                images = list_images(self._last_folder, recursive=True)
+                if images:
+                    self._all_images = images
+                    self._current_index = 0
+                    self._rebuild_images(images[0])
+                    self._show_status(f"{len(images)}개 이미지 로드 (이전 폴더)")
+            except Exception:
+                pass
 
     def _create_actions(self) -> None:
         folder_icon = QIcon(str(self._icon_path("folder icon.png")))
@@ -128,12 +148,10 @@ class MainWindow(QMainWindow):
         self.sort_combo.setCurrentIndex(0)
         self.sort_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
         self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
-        self.sort_combo.setVisible(False)
         sort_layout.addWidget(self.sort_combo, alignment=Qt.AlignmentFlag.AlignCenter)
         self.sort_dir_checkbox = QCheckBox("Asc", self)
         self.sort_dir_checkbox.setChecked(False)
         self.sort_dir_checkbox.setStyleSheet("color: #f2f2f2; background: transparent;")
-        self.sort_dir_checkbox.setVisible(False)
         self.sort_dir_checkbox.toggled.connect(self._on_sort_direction_toggled)
         sort_layout.addWidget(self.sort_dir_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
         sort_layout.addStretch(1)
@@ -227,7 +245,7 @@ class MainWindow(QMainWindow):
         self.info_label.setStyleSheet("color: #bbb;")
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.info_label.setTextFormat(Qt.TextFormat.RichText)
-        self.info_label.setVisible(False)
+        self.info_label.setVisible(True)
         status.addPermanentWidget(self.info_label, 1)
         self._set_info_placeholder()
 
@@ -327,11 +345,6 @@ class MainWindow(QMainWindow):
         self.canvas.show_image(path)
         self._update_image_info(path)
         self._update_title_label(path)
-        if hasattr(self, "sort_combo"):
-            self.sort_combo.setVisible(True)
-        if hasattr(self, "sort_dir_checkbox"):
-            # Random 모드일 때도 표시하되, Random에는 미적용.
-            self.sort_dir_checkbox.setVisible(True)
         self._update_nav_buttons()
         # 이미지 전환 시 포커스를 네비게이션 컨테이너로 줘서 단축키가 즉시 동작하도록.
         self.nav_container.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
@@ -508,15 +521,14 @@ class MainWindow(QMainWindow):
                 self.toolbar.hide()
             self.fullscreen_icon.setToolTip("전체화면 해제")
 
+    def _exit_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.toggle_fullscreen()
+
     def _set_info_placeholder(self) -> None:
         self._has_image = False
         self.info_label.clear()
-        self.info_label.setVisible(False)
         self._update_title_label(None)
-        if hasattr(self, "sort_combo"):
-            self.sort_combo.setVisible(False)
-        if hasattr(self, "sort_dir_checkbox"):
-            self.sort_dir_checkbox.setVisible(False)
 
     def _info_html(self, resolution: str, file_size: str) -> str:
         size = max(int(self._status_icon_size / 1.5), 12)
