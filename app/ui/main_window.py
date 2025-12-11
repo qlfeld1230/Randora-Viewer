@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import ctypes
 from pathlib import Path
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
@@ -23,6 +25,7 @@ from PyQt6.QtWidgets import (
 
 from app.services import settings
 from app.services.fs_service import list_images
+from app.core.shortcuts import bind_delete, bind_image_navigation
 from app.ui.image_canvas import ImageCanvas
 
 
@@ -62,6 +65,13 @@ class MainWindow(QMainWindow):
         self.nav_container.request_prev.connect(self._show_prev_image)
         self.nav_container.request_next.connect(self._show_next_image)
         self._update_max_button_icon()
+        # 화살표/삭제 단축키 바인딩 (중앙 네비 영역 기준)
+        self._image_shortcuts = bind_image_navigation(
+            self.nav_container, self._show_prev_image, self._show_next_image
+        )
+        self._delete_shortcut = bind_delete(
+            self.nav_container, self._delete_current_image
+        )
 
     def _create_actions(self) -> None:
         folder_icon = QIcon(str(self._icon_path("folder icon.png")))
@@ -255,6 +265,8 @@ class MainWindow(QMainWindow):
         self._update_image_info(path)
         self._update_title_label(path)
         self._update_nav_buttons()
+        # 이미지 전환 시 포커스를 네비게이션 컨테이너로 줘서 단축키가 즉시 동작하도록.
+        self.nav_container.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
 
     def _show_prev_image(self) -> None:
         if self._current_index > 0:
@@ -263,6 +275,28 @@ class MainWindow(QMainWindow):
     def _show_next_image(self) -> None:
         if self._images and self._current_index < len(self._images) - 1:
             self._show_image_at_index(self._current_index + 1)
+
+    def _delete_current_image(self) -> None:
+        if not self._images:
+            return
+        path = self._images[self._current_index]
+        try:
+            self._send_to_trash(path)
+        except Exception as exc:
+            self._show_status(f"삭제 실패: {exc}")
+            return
+
+        del self._images[self._current_index]
+        if self._current_index >= len(self._images):
+            self._current_index = max(0, len(self._images) - 1)
+
+        if self._images:
+            self._show_image_at_index(self._current_index)
+            self._show_status("이미지를 삭제했습니다")
+        else:
+            self.canvas.clear_image()
+            self._set_info_placeholder()
+            self._show_status("모든 이미지가 삭제되었습니다")
 
     def _toggle_max_restore(self) -> None:
         if self.isMaximized():
@@ -380,9 +414,48 @@ class MainWindow(QMainWindow):
             painter.drawRect(1, 1, size - 6, size - 6)
         elif kind == "close":
             painter.drawLine(3, 3, size - 3, size - 3)
-            painter.drawLine(size - 3, 3, 3, size - 3)
+        painter.drawLine(size - 3, 3, 3, size - 3)
         painter.end()
         return QIcon(pm)
+
+    def _send_to_trash(self, path: Path) -> None:
+        """Delete 파일을 휴지통으로 보낸다(Windows), 그 외 OS는 즉시 삭제."""
+        if sys.platform.startswith("win"):
+            # SHFileOperationW 사용
+            FO_DELETE = 3
+            FOF_ALLOWUNDO = 0x40
+            FOF_NOCONFIRMATION = 0x10
+            FOF_SILENT = 0x4
+
+            class SHFILEOPSTRUCT(ctypes.Structure):
+                _fields_ = [
+                    ("hwnd", ctypes.c_void_p),
+                    ("wFunc", ctypes.c_uint),
+                    ("pFrom", ctypes.c_wchar_p),
+                    ("pTo", ctypes.c_wchar_p),
+                    ("fFlags", ctypes.c_uint),
+                    ("fAnyOperationsAborted", ctypes.c_bool),
+                    ("hNameMappings", ctypes.c_void_p),
+                    ("lpszProgressTitle", ctypes.c_wchar_p),
+                ]
+
+            # SHFileOperationW expects double-null-terminated list.
+            p_from = str(path) + "\0\0"
+            op = SHFILEOPSTRUCT(
+                hwnd=int(self.winId()),
+                wFunc=FO_DELETE,
+                pFrom=p_from,
+                pTo=None,
+                fFlags=FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT,
+                fAnyOperationsAborted=False,
+                hNameMappings=None,
+                lpszProgressTitle=None,
+            )
+            res = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+            if res != 0:
+                raise OSError(f"SHFileOperation failed with code {res}")
+        else:
+            path.unlink(missing_ok=True)
 
     @staticmethod
     def _format_size(num_bytes: int) -> str:
@@ -464,6 +537,7 @@ class NavigationContainer(QWidget):
         super().__init__(parent)
         self.canvas = canvas
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._side_width = 60
         self._side_padding = 17
         self._fade_duration = 200
@@ -539,6 +613,11 @@ class NavigationContainer(QWidget):
     def leaveEvent(self, event) -> None:  # type: ignore[override]
         self._set_buttons_visible(False)
         super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        # 포커스를 받아 단축키가 동작하도록 한다.
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+        super().mousePressEvent(event)
 
     def _set_buttons_visible(self, visible: bool, instant: bool = False) -> None:
         if visible:
