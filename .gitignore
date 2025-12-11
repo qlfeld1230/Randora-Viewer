@@ -29,5 +29,5 @@ env/
 .env.bak
 
 #keywords
-keywords.txt/
-session.json/
+keywords.txt
+session.json
