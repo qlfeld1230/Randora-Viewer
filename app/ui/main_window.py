@@ -364,7 +364,7 @@ class MainWindow(QMainWindow):
         kw = self._current_keyword()
         if kw:
             kw_lower = kw.lower()
-            self._images = [p for p in self._images if p.name.lower().startswith(kw_lower)]
+            self._images = [p for p in self._images if kw_lower in p.name.lower()]
         if not self._images:
             self.canvas.clear_image()
             self._set_info_placeholder()
