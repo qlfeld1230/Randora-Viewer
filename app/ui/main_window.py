@@ -95,11 +95,12 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(14, 14))
         toolbar.setStyleSheet(
             """
-            QToolBar { border: 0px; background: transparent; spacing: 4px; }
+            QToolBar { border: 0px; background: transparent; spacing: 2px; }
             QToolButton {
                 min-height: 0px;
                 padding: 2px 4px;
                 qproperty-iconSize: 14px 14px;
+                margin: 0px;
             }
             """
         )
@@ -146,6 +147,17 @@ class MainWindow(QMainWindow):
         stretch_right.setSizePolicy(QSizePolicy.Policy.Expanding,
                                     QSizePolicy.Policy.Expanding)
         toolbar.addWidget(stretch_right)
+
+        # 키워드(추가 예정) 영역 - 초기 None 항목
+        self.keyword_combo = QComboBox(self)
+        self.keyword_combo.addItem(" None")
+        self.keyword_combo.setMinimumWidth(90)
+        self.keyword_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
+        toolbar.addWidget(self.keyword_combo)
+        spacer_keywords = QWidget(self)
+        spacer_keywords.setFixedWidth(6)
+        spacer_keywords.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        toolbar.addWidget(spacer_keywords)
 
         # 설정 버튼 (구분선 왼쪽)
         self.settings_btn = QToolButton(self)
