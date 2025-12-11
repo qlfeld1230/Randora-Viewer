@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QStyle,
+    QComboBox,
     QCheckBox,
 )
 
@@ -56,7 +57,8 @@ class MainWindow(QMainWindow):
         self._has_image: bool = False
         self._images: list[Path] = []
         self._current_index: int = 0
-        self._random_mode: bool = False
+        self._sort_mode: str = "date"  # date | name | random
+        self._sort_ascending: bool = False  # False: 내림차순, True: 오름차순
 
         self._create_actions()
         self._create_toolbar()
@@ -106,16 +108,29 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
         toolbar.addAction(self.open_folder_action)
 
-        self.random_toggle = QCheckBox("Random", self)
-        self.random_toggle.setChecked(False)
-        self.random_toggle.setStyleSheet("color: #f2f2f2; margin-left: 6px;")
-        self.random_toggle.toggled.connect(self._on_random_toggled)
-        toolbar.addWidget(self.random_toggle)
-
-        stretch_left = QWidget(self)
-        stretch_left.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                   QSizePolicy.Policy.Expanding)
-        toolbar.addWidget(stretch_left)
+        sort_container = QWidget(self)
+        sort_container.setStyleSheet("background: transparent;")
+        sort_container.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                     QSizePolicy.Policy.Preferred)
+        sort_layout = QHBoxLayout(sort_container)
+        sort_layout.setContentsMargins(0, 0, 0, 0)
+        sort_layout.setSpacing(6)
+        sort_layout.addStretch(1)
+        self.sort_combo = QComboBox(self)
+        self.sort_combo.addItems([" Date", " Name", " Random"])
+        self.sort_combo.setCurrentIndex(0)
+        self.sort_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
+        self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        self.sort_combo.setVisible(False)
+        sort_layout.addWidget(self.sort_combo, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.sort_dir_checkbox = QCheckBox("Asc", self)
+        self.sort_dir_checkbox.setChecked(False)
+        self.sort_dir_checkbox.setStyleSheet("color: #f2f2f2; background: transparent;")
+        self.sort_dir_checkbox.setVisible(False)
+        self.sort_dir_checkbox.toggled.connect(self._on_sort_direction_toggled)
+        sort_layout.addWidget(self.sort_dir_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
+        sort_layout.addStretch(1)
+        toolbar.addWidget(sort_container)
 
         self.title_label = QLabel("", self)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -268,8 +283,7 @@ class MainWindow(QMainWindow):
             self._current_index = 0
 
         self._images = images
-        if self._random_mode:
-            self._shuffle_keep_current(target)
+        self._apply_sort(self._sort_mode, target, ascending=self._sort_ascending)
         self._show_image_at_index(self._current_index)
         self._last_folder = folder
         settings.set_last_folder(self._last_folder)
@@ -284,6 +298,11 @@ class MainWindow(QMainWindow):
         self.canvas.show_image(path)
         self._update_image_info(path)
         self._update_title_label(path)
+        if hasattr(self, "sort_combo"):
+            self.sort_combo.setVisible(True)
+        if hasattr(self, "sort_dir_checkbox"):
+            # Random 모드일 때도 표시하되, Random에는 미적용.
+            self.sort_dir_checkbox.setVisible(True)
         self._update_nav_buttons()
         # 이미지 전환 시 포커스를 네비게이션 컨테이너로 줘서 단축키가 즉시 동작하도록.
         self.nav_container.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
@@ -296,21 +315,24 @@ class MainWindow(QMainWindow):
         if self._images and self._current_index < len(self._images) - 1:
             self._show_image_at_index(self._current_index + 1)
 
-    def _on_random_toggled(self, checked: bool) -> None:
-        self._random_mode = checked
+    def _on_sort_changed(self, index: int) -> None:
         if not self._images:
             return
+        modes = ["date", "name", "random"]
+        if index < 0 or index >= len(modes):
+            return
+        self._sort_mode = modes[index]
         current = self._images[self._current_index]
-        if checked:
-            self._shuffle_keep_current(current)
-            self._current_index = 0
-            self._show_image_at_index(self._current_index)
-            self._show_status("랜덤 순서로 전환")
-        else:
-            self._images = sorted(self._images)
-            self._current_index = self._find_index(current)
-            self._show_image_at_index(self._current_index)
-            self._show_status("순차 순서로 전환")
+        self._apply_sort(self._sort_mode, current, ascending=self._sort_ascending)
+        self._current_index = 0
+        self._show_image_at_index(self._current_index)
+        msg = {
+            "date": f"날짜순({'오름차순' if self._sort_ascending else '최신 우선'}) 정렬",
+            "name": f"이름순({'오름차순' if self._sort_ascending else '내림차순'}) 정렬",
+            "random": "랜덤 순서 전환",
+        }.get(self._sort_mode, "")
+        if msg:
+            self._show_status(msg)
 
     def _delete_current_image(self) -> None:
         if not self._images:
@@ -334,19 +356,52 @@ class MainWindow(QMainWindow):
             self._set_info_placeholder()
             self._show_status("모든 이미지가 삭제되었습니다")
 
-    def _shuffle_keep_current(self, current: Path) -> None:
-        """현재 이미지는 유지하고 나머지를 랜덤 섞기."""
-        resolved = current.resolve()
-        rest = [p for p in self._images if p.resolve() != resolved]
-        random.shuffle(rest)
-        self._images = [current] + rest
+    def _apply_sort(self, mode: str, current: Path | None, *, ascending: bool) -> None:
+        if not self._images:
+            return
+        cur_resolved = current.resolve() if current else None
+        if cur_resolved:
+            rest = [p for p in self._images if p.resolve() != cur_resolved]
+        else:
+            rest = list(self._images)
+
+        if mode == "random":
+            random.shuffle(rest)
+        elif mode == "name":
+            rest.sort(key=lambda p: p.name.lower(), reverse=not ascending)
+        else:  # date
+            rest.sort(
+                key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+                reverse=not ascending,
+            )
+
+        if cur_resolved and current:
+            self._images = [current] + rest
+        else:
+            self._images = rest
 
     def _find_index(self, path: Path) -> int:
         resolved = path.resolve()
         for idx, p in enumerate(self._images):
-            if p.resolve() == resolved:
-                return idx
+            try:
+                if p.resolve() == resolved:
+                    return idx
+            except OSError:
+                continue
         return 0
+
+    def _on_sort_direction_toggled(self, checked: bool) -> None:
+        self._sort_ascending = checked
+        if not self._images:
+            return
+        if self._sort_mode == "random":
+            # 랜덤은 정렬 방향에 영향받지 않음.
+            return
+        current = self._images[self._current_index]
+        self._apply_sort(self._sort_mode, current, ascending=self._sort_ascending)
+        self._current_index = 0
+        self._show_image_at_index(self._current_index)
+        self._show_status("오름차순 정렬" if checked else "내림차순 정렬")
 
     def _toggle_max_restore(self) -> None:
         if self.isMaximized():
@@ -403,6 +458,10 @@ class MainWindow(QMainWindow):
         self.info_label.clear()
         self.info_label.setVisible(False)
         self._update_title_label(None)
+        if hasattr(self, "sort_combo"):
+            self.sort_combo.setVisible(False)
+        if hasattr(self, "sort_dir_checkbox"):
+            self.sort_dir_checkbox.setVisible(False)
 
     def _info_html(self, resolution: str, file_size: str) -> str:
         size = max(int(self._status_icon_size / 1.5), 12)
