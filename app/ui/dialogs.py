@@ -138,6 +138,7 @@ class BatchEditDialog(QDialog):
 
     path_changed = pyqtSignal(str)
     edit_requested = pyqtSignal(str, str)
+    number_requested = pyqtSignal(str)
 
     def __init__(self, initial_path: str = "", parent=None) -> None:
         super().__init__(parent)
@@ -163,6 +164,19 @@ class BatchEditDialog(QDialog):
         self.path_btn.clicked.connect(self._choose_path)
         path_layout.addWidget(self.path_btn, 0)
         layout.addWidget(path_container)
+
+        # 숫자 일괄 변환 버튼 (추후 로직 연결)
+        number_container = QWidget(self)
+        number_layout = QHBoxLayout(number_container)
+        number_layout.setContentsMargins(0, 0, 0, 0)
+        number_layout.setSpacing(0)
+        number_layout.addStretch(1)
+        self.number_btn = QPushButton("숫자로 변경", self)
+        self.number_btn.setMinimumHeight(36)
+        self.number_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.number_btn.clicked.connect(self._on_number)
+        number_layout.addWidget(self.number_btn)
+        layout.addWidget(number_container)
 
         input_container = QWidget(self)
         input_layout = QHBoxLayout(input_container)
@@ -206,4 +220,10 @@ class BatchEditDialog(QDialog):
         if not keyword:
             return
         self.edit_requested.emit(keyword, self._current_path)
+        self.accept()
+
+    def _on_number(self) -> None:
+        if not self._current_path:
+            return
+        self.number_requested.emit(self._current_path)
         self.accept()

@@ -9,6 +9,7 @@ from typing import TypedDict
 
 class SessionState(TypedDict, total=False):
     last_folder: str
+    open_path: str
     sort_mode: str
     sort_ascending: bool
     last_keyword: str
@@ -19,6 +20,7 @@ _STATE_FILE = Path(__file__).resolve().parent.parent / "resources" / "session.js
 
 _DEFAULT: SessionState = {
     "last_folder": "",
+    "open_path": "",
     "sort_mode": "date",
     "sort_ascending": False,
     "last_keyword": "",

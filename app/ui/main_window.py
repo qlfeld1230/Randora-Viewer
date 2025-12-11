@@ -55,10 +55,12 @@ class MainWindow(QMainWindow):
         self.nav_container = NavigationContainer(self.canvas, self._icons_dir)
         session = load_session()
         self._last_folder: Path | None = Path(session["last_folder"]) if session.get("last_folder") else None
+        self._last_open_path: Path | None = Path(session["open_path"]) if session.get("open_path") else None
         self._info_font_size = 10
         self._status_icon_size = 18  # temporary, recalculated in _create_statusbar
         self._statusbar_height = 45
         self._has_image: bool = False
+        self._normal_geometry = None
         self._all_images: list[Path] = []
         self._images: list[Path] = []
         self._current_index: int = 0
@@ -101,7 +103,7 @@ class MainWindow(QMainWindow):
         # 이전 폴더 자동 로드
         if self._last_folder and self._last_folder.exists():
             try:
-                images = list_images(self._last_folder, recursive=True)
+                images = list_images(self._last_folder, recursive=False)
                 if images:
                     self._all_images = images
                     self._current_index = 0
@@ -285,7 +287,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.nav_container)
 
     def _on_open_folder(self) -> None:
-        start_dir = str(self._last_folder) if self._last_folder else ""
+        start_dir = ""
+        if self._last_open_path:
+            start_dir = str(self._last_open_path)
+        elif self._last_folder:
+            start_dir = str(self._last_folder)
 
         dialog = QFileDialog(self, "폴더 또는 이미지 선택", start_dir)
         dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
@@ -308,7 +314,7 @@ class MainWindow(QMainWindow):
             selected_image = first
 
         try:
-            images = list_images(folder, recursive=True)
+            images = list_images(folder, recursive=False)
         except Exception as exc:  # pragma: no cover - UI path
             self._show_status(f"폴더를 읽을 수 없습니다: {exc}")
             return
@@ -337,7 +343,9 @@ class MainWindow(QMainWindow):
         self._all_images = images
         self._rebuild_images(target)
         self._last_folder = folder
+        self._last_open_path = folder
         self._session_state["last_folder"] = str(self._last_folder)
+        self._session_state["open_path"] = str(self._last_open_path)
         save_session(self._session_state)
         self._show_status(f"{len(images)}개 이미지 로드")
 
@@ -484,7 +492,10 @@ class MainWindow(QMainWindow):
     def _toggle_max_restore(self) -> None:
         if self.isMaximized():
             self.showNormal()
+            if self._normal_geometry is not None:
+                self.setGeometry(self._normal_geometry)
         else:
+            self._normal_geometry = self.geometry()
             self.showMaximized()
         self._update_max_button_icon()
 
@@ -651,14 +662,13 @@ class MainWindow(QMainWindow):
             return
         if cleaned.lower() == "none" or cleaned in self._keywords:
             return
+        current_idx = self.keyword_combo.currentIndex() if hasattr(self, "keyword_combo") else -1
         self._keywords.append(cleaned)
         self.keyword_combo.addItem(f" {cleaned}")
         self._save_keywords_file()
-        # 새로 추가한 키워드를 바로 선택하고 기억
-        self.keyword_combo.setCurrentIndex(self.keyword_combo.count() - 1)
-        settings.set_last_keyword(cleaned)
-        self._session_state["last_keyword"] = cleaned
-        save_session(self._session_state)
+        if current_idx >= 0:
+            self.keyword_combo.setCurrentIndex(current_idx)
+
 
     def _load_keywords(self) -> list[str]:
         try:
@@ -766,6 +776,7 @@ class MainWindow(QMainWindow):
         dlg = BatchEditDialog(self._session_state.get("batch_path", ""), self)
         dlg.path_changed.connect(self._on_batch_path_changed)
         dlg.edit_requested.connect(self._batch_prefix_images)
+        dlg.number_requested.connect(self._batch_number_images)
         dlg.exec()
 
     def _on_batch_path_changed(self, path_str: str) -> None:
@@ -814,6 +825,84 @@ class MainWindow(QMainWindow):
         self._show_status(
             f"일괄 수정 완료: {renamed}개 변경, {skipped}개 건너뜀, {failed}개 실패"
         )
+
+        if self._last_folder and folder.resolve() == self._last_folder.resolve():
+            try:
+                self._all_images = list_images(folder, recursive=True)
+                self._rebuild_images(replacement)
+            except Exception:
+                pass
+
+    def _batch_number_images(self, target_dir: str) -> None:
+        folder = Path(target_dir).expanduser()
+        if not folder.exists():
+            self._show_status("경로가 존재하지 않습니다.")
+            return
+        try:
+            images = list_images(folder, recursive=True)
+        except Exception as exc:
+            self._show_status(f"이미지 목록을 불러오지 못했습니다: {exc}")
+            return
+        if not images:
+            self._show_status("변경할 이미지가 없습니다.")
+            return
+
+        # 날짜 오래된 것부터 정렬
+        images.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
+
+        keywords_lower = {kw.lower(): kw for kw in self._keywords if kw.lower() != "none"}
+        current_path = self._images[self._current_index] if self._images else None
+        replacement: Path | None = None
+
+        # 1차: 충돌 방지용 임시 이름으로 변경
+        temp_paths: list[tuple[Path, str | None, Path]] = []
+        for idx, img in enumerate(images, start=1):
+            base_lower = img.stem.lower()
+            prefix: str | None = None
+            best_len = -1
+            for kw_lower, orig in keywords_lower.items():
+                if base_lower == kw_lower or base_lower.startswith(f"{kw_lower}_"):
+                    if len(kw_lower) > best_len:
+                        best_len = len(kw_lower)
+                        prefix = orig
+            tmp = img.with_name(f"__rvtmp__{idx}__{img.name}")
+            try:
+                img.rename(tmp)
+                temp_paths.append((tmp, prefix, img))
+            except Exception:
+                continue
+
+        renamed = skipped = failed = 0
+
+        for idx, (tmp_path, prefix, original) in enumerate(temp_paths, start=1):
+            ext = tmp_path.suffix
+            if prefix:
+                new_name = f"{prefix}_{idx}{ext}"
+            else:
+                new_name = f"{idx}{ext}"
+            dest = tmp_path.with_name(new_name)
+            try:
+                if dest.exists():
+                    skipped += 1
+                    tmp_path.rename(original)  # best-effort rollback
+                    continue
+                tmp_path.rename(dest)
+                if current_path and original.resolve() == current_path.resolve():
+                    replacement = dest
+                renamed += 1
+            except Exception:
+                failed += 1
+                try:
+                    tmp_path.rename(original)
+                except Exception:
+                    pass
+
+        if renamed == 0 and failed == 0 and skipped == 0:
+            self._show_status("이름 변경에 실패했습니다.")
+        else:
+            self._show_status(
+                f"숫자 변경 완료: {renamed}개 변경, {skipped}개 건너뜀, {failed}개 실패"
+            )
 
         if self._last_folder and folder.resolve() == self._last_folder.resolve():
             try:
