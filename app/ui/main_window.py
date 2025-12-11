@@ -32,7 +32,7 @@ from app.services import settings  # legacy; will be phased out
 from app.services.fs_service import list_images
 from app.services.session_store import load_session, save_session
 from app.core.shortcuts import bind_delete, bind_image_navigation
-from app.ui.dialogs import KeywordDialog
+from app.ui.dialogs import KeywordDialog, BatchEditDialog
 from app.ui.image_canvas import ImageCanvas
 
 
@@ -634,6 +634,7 @@ class MainWindow(QMainWindow):
         action_keyword = menu.addAction("키워드 추가")
         action_batch = menu.addAction("일괄 수정")
         action_keyword.triggered.connect(self._open_keyword_dialog)
+        action_batch.triggered.connect(self._open_batch_dialog)
         pos = self.settings_btn.mapToGlobal(
             self.settings_btn.rect().bottomLeft())
         menu.exec(pos)
@@ -760,6 +761,66 @@ class MainWindow(QMainWindow):
         save_session(self._session_state)
         current = self._images[self._current_index] if self._images else None
         self._rebuild_images(current)
+
+    def _open_batch_dialog(self) -> None:
+        dlg = BatchEditDialog(self._session_state.get("batch_path", ""), self)
+        dlg.path_changed.connect(self._on_batch_path_changed)
+        dlg.edit_requested.connect(self._batch_prefix_images)
+        dlg.exec()
+
+    def _on_batch_path_changed(self, path_str: str) -> None:
+        self._session_state["batch_path"] = path_str
+        save_session(self._session_state)
+
+    def _batch_prefix_images(self, keyword: str, target_dir: str) -> None:
+        kw = keyword.strip()
+        if not kw or len(kw) > 40 or kw.lower() == "none":
+            self._show_status("유효하지 않은 키워드입니다.")
+            return
+        folder = Path(target_dir).expanduser()
+        if not folder.exists():
+            self._show_status("경로가 존재하지 않습니다.")
+            return
+        try:
+            images = list_images(folder, recursive=True)
+        except Exception as exc:
+            self._show_status(f"이미지 목록을 불러오지 못했습니다: {exc}")
+            return
+        if not images:
+            self._show_status("수정할 이미지가 없습니다.")
+            return
+
+        renamed = skipped = failed = 0
+        current_path = self._images[self._current_index] if self._images else None
+        replacement: Path | None = None
+        prefix_lower = f"{kw.lower()}_"
+
+        for img in images:
+            try:
+                if img.name.lower().startswith(prefix_lower):
+                    skipped += 1
+                    continue
+                dest = img.with_name(f"{kw}_{img.name}")
+                if dest.exists():
+                    skipped += 1
+                    continue
+                img.rename(dest)
+                if current_path and img.resolve() == current_path.resolve():
+                    replacement = dest
+                renamed += 1
+            except Exception:
+                failed += 1
+
+        self._show_status(
+            f"일괄 수정 완료: {renamed}개 변경, {skipped}개 건너뜀, {failed}개 실패"
+        )
+
+        if self._last_folder and folder.resolve() == self._last_folder.resolve():
+            try:
+                self._all_images = list_images(folder, recursive=True)
+                self._rebuild_images(replacement)
+            except Exception:
+                pass
     def _send_to_trash(self, path: Path) -> None:
         """Delete 파일을 휴지통으로 보낸다. 실패 시 삭제로 폴백."""
         try:

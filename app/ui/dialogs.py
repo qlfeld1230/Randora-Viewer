@@ -1,4 +1,4 @@
-"""설정/다이얼로그 UI 모음."""
+"""Dialog utilities for keyword management and batch edits."""
 
 from __future__ import annotations
 
@@ -6,22 +6,21 @@ from typing import Iterable
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
+    QFileDialog,
     QDialog,
-    QVBoxLayout,
     QHBoxLayout,
-    QPushButton,
-    QListWidget,
-    QLineEdit,
     QLabel,
-    QWidget,
-    QSizePolicy,
+    QLineEdit,
+    QListWidget,
     QPushButton,
-    QHBoxLayout,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 
 class KeywordDialog(QDialog):
-    """키워드 추가/삭제 팝업."""
+    """키워드 추가/삭제 다이얼로그."""
 
     keyword_added = pyqtSignal(str)
     keyword_deleted = pyqtSignal(str)
@@ -79,7 +78,6 @@ class KeywordDialog(QDialog):
     def set_keywords(self, keywords: Iterable[str]) -> None:
         self.list_widget.clear()
         self._keywords = set()
-        # 항상 None은 기본으로 표시하지만 삭제 불가
         self.list_widget.addItem("None")
         for kw in keywords:
             cleaned = kw.strip()
@@ -109,11 +107,7 @@ class KeywordDialog(QDialog):
             or text in self._keywords
         ):
             return
-        # 실제 저장은 상위에서 처리하도록 시그널만 보낸다.
         self.keyword_added.emit(text)
-        # UI 업데이트
-        if self.list_widget.count() == 1 and self.list_widget.item(0).text() == "(키워드 없음)":
-            self.list_widget.clear()
         self.list_widget.addItem(text)
         self._keywords.add(text)
         self.input.clear()
@@ -122,23 +116,94 @@ class KeywordDialog(QDialog):
 
     def _on_selection_changed(self) -> None:
         item = self.list_widget.currentItem()
-        self.delete_btn.setEnabled(
-            bool(item)
-            and item.text() not in ("(키워드 없음)", "None")
-        )
+        self.delete_btn.setEnabled(bool(item) and item.text() not in ("(키워드 없음)", "None"))
 
     def _on_delete(self) -> None:
         item = self.list_widget.currentItem()
         if not item:
             return
         text = item.text().strip()
-        if not text or text == "(키워드 없음)" or text.lower() == "none":
+        if not text or text.lower() == "none":
             return
         if text in self._keywords:
             self._keywords.remove(text)
         self.keyword_deleted.emit(text)
         row = self.list_widget.row(item)
         self.list_widget.takeItem(row)
-        if self.list_widget.count() == 0:
-            self.list_widget.addItem("(키워드 없음)")
         self._on_selection_changed()
+
+
+class BatchEditDialog(QDialog):
+    """일괄 수정 다이얼로그(UI만)."""
+
+    path_changed = pyqtSignal(str)
+    edit_requested = pyqtSignal(str, str)
+
+    def __init__(self, initial_path: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("일괄 수정")
+        self.setMinimumSize(460, 200)
+        self._current_path = initial_path
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        path_container = QWidget(self)
+        path_layout = QHBoxLayout(path_container)
+        path_layout.setContentsMargins(0, 0, 0, 0)
+        path_layout.setSpacing(8)
+        self.path_display = QLineEdit(self)
+        self.path_display.setReadOnly(True)
+        self.path_display.setPlaceholderText("경로를 선택하세요")
+        if initial_path:
+            self.path_display.setText(initial_path)
+        path_layout.addWidget(self.path_display, 1)
+        self.path_btn = QPushButton("경로 선택", self)
+        self.path_btn.clicked.connect(self._choose_path)
+        path_layout.addWidget(self.path_btn, 0)
+        layout.addWidget(path_container)
+
+        input_container = QWidget(self)
+        input_layout = QHBoxLayout(input_container)
+        input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(8)
+
+        self.input = QLineEdit(self)
+        self.input.setMinimumHeight(36)
+        self.input.setPlaceholderText("키워드를 입력해주세요")
+        self.input.textChanged.connect(self._validate_input)
+        input_layout.addWidget(self.input, 1)
+
+        self.edit_btn = QPushButton("수정", self)
+        self.edit_btn.setMinimumHeight(36)
+        self.edit_btn.setEnabled(False)
+        self.edit_btn.clicked.connect(self._on_edit)
+        input_layout.addWidget(self.edit_btn, 0)
+
+        layout.addWidget(input_container)
+        self._validate_input("")
+
+    def _choose_path(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self, "경로 선택", self._current_path or ""
+        )
+        if directory:
+            self._current_path = directory
+            self.path_display.setText(directory)
+            self.path_changed.emit(directory)
+        self._validate_input(self.input.text())
+
+    def _validate_input(self, text: str) -> None:
+        stripped = text.strip()
+        valid_kw = 0 < len(stripped) <= 40 and stripped.lower() != "none"
+        self.edit_btn.setEnabled(valid_kw and bool(self._current_path))
+
+    def _on_edit(self) -> None:
+        if not self.edit_btn.isEnabled():
+            return
+        keyword = self.input.text().strip()
+        if not keyword:
+            return
+        self.edit_requested.emit(keyword, self._current_path)
+        self.accept()
