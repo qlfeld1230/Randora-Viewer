@@ -96,3 +96,10 @@ Sorting is a key feature for efficient bulk image management.
 - 이 프로젝트는 **MIT License**를 따릅니다.  
   This project is licensed under the **MIT License**.
 
+---
+# 🖼️ 스크린샷 / Screenshots
+프로그램 실행 화면 예시입니다. 
+Here are example screenshots of the application.
+
+![screenshot_1](docs/screenshot_1.png)  
+![screenshot_2](docs/screenshot_2.png)
