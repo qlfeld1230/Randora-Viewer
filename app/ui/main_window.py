@@ -10,6 +10,7 @@ from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -119,6 +120,14 @@ class MainWindow(QMainWindow):
         stretch_right.setSizePolicy(QSizePolicy.Policy.Expanding,
                                     QSizePolicy.Policy.Expanding)
         toolbar.addWidget(stretch_right)
+
+        # 창 제어 버튼 왼쪽 구분선 (길이 20px)
+        divider = QFrame(self)
+        divider.setFrameShape(QFrame.Shape.VLine)
+        divider.setFrameShadow(QFrame.Shadow.Plain)
+        divider.setStyleSheet("color: rgba(255,255,255,0.25);")
+        divider.setFixedHeight(20)
+        toolbar.addWidget(divider)
 
         # 창 제어 버튼(밝은 커스텀 아이콘)
         controls = QWidget(self)
@@ -401,20 +410,23 @@ class MainWindow(QMainWindow):
         pm = QPixmap(size, size)
         pm.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pm)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         pen = QPen(Qt.GlobalColor.white)
         pen.setWidth(2)
         painter.setPen(pen)
+
         if kind == "min":
             y = size // 2
             painter.drawLine(3, y, size - 3, y)
         elif kind == "max":
-            painter.drawRect(2, 2, size - 4, size - 4)
+            painter.drawRect(2, 2, size - 5, size - 5)
         elif kind == "restore":
-            painter.drawRect(3, 4, size - 6, size - 6)
+            painter.drawRect(4, 4, size - 6, size - 6)
             painter.drawRect(1, 1, size - 6, size - 6)
         elif kind == "close":
             painter.drawLine(3, 3, size - 3, size - 3)
-        painter.drawLine(size - 3, 3, 3, size - 3)
+            painter.drawLine(size - 3, 3, 3, size - 3)
+
         painter.end()
         return QIcon(pm)
 
