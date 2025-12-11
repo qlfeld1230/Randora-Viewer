@@ -25,11 +25,13 @@ from PyQt6.QtWidgets import (
     QStyle,
     QComboBox,
     QCheckBox,
+    QMenu,
 )
 
 from app.services import settings
 from app.services.fs_service import list_images
 from app.core.shortcuts import bind_delete, bind_image_navigation
+from app.ui.dialogs import SettingsDialog
 from app.ui.image_canvas import ImageCanvas
 
 
@@ -144,6 +146,15 @@ class MainWindow(QMainWindow):
         stretch_right.setSizePolicy(QSizePolicy.Policy.Expanding,
                                     QSizePolicy.Policy.Expanding)
         toolbar.addWidget(stretch_right)
+
+        # 설정 버튼 (구분선 왼쪽)
+        self.settings_btn = QToolButton(self)
+        self.settings_btn.setIcon(QIcon(str(self._icon_path("setting icon.png"))))
+        self.settings_btn.setIconSize(QSize(16, 16))
+        self.settings_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_btn.clicked.connect(self._show_settings_menu)
+        toolbar.addWidget(self.settings_btn)
 
         # 창 제어 버튼 왼쪽 구분선 (길이 20px)
         divider = QFrame(self)
@@ -529,6 +540,14 @@ class MainWindow(QMainWindow):
 
         painter.end()
         return QIcon(pm)
+
+    def _show_settings_menu(self) -> None:
+        menu = QMenu(self)
+        menu.addAction("키워드 추가")
+        menu.addAction("일괄 수정")
+        pos = self.settings_btn.mapToGlobal(
+            self.settings_btn.rect().bottomLeft())
+        menu.exec(pos)
 
     def _send_to_trash(self, path: Path) -> None:
         """Delete 파일을 휴지통으로 보낸다(Windows), 그 외 OS는 즉시 삭제."""
