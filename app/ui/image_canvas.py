@@ -1,4 +1,4 @@
-"""Central image display widget."""
+"""Central image display widget"""
 
 from __future__ import annotations
 
@@ -29,7 +29,6 @@ class ImageCanvas(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(QSize(200, 200))
-        # Use the window palette color so letterbox areas blend with the app background.
         self.setStyleSheet("background: palette(window); color: #888;")
         self.setText("이미지를 선택하세요")
         self.setContentsMargins(0, 0, 0, 0)

@@ -1,4 +1,4 @@
-"""Dialog utilities for keyword management and batch edits."""
+"""Dialog utilities for keyword management and batch edits"""
 
 from __future__ import annotations
 
@@ -20,8 +20,6 @@ from PyQt6.QtWidgets import (
 
 
 class KeywordDialog(QDialog):
-    """키워드 추가/삭제 다이얼로그."""
-
     keyword_added = pyqtSignal(str)
     keyword_deleted = pyqtSignal(str)
 
@@ -134,8 +132,6 @@ class KeywordDialog(QDialog):
 
 
 class BatchEditDialog(QDialog):
-    """일괄 수정 다이얼로그(UI만)."""
-
     path_changed = pyqtSignal(str)
     edit_requested = pyqtSignal(str, str)
     number_requested = pyqtSignal(str)

@@ -1,4 +1,4 @@
-"""세션 상태 저장/로드 유틸."""
+"""Save Session State/Load Utilities"""
 
 from __future__ import annotations
 

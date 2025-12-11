@@ -1,2 +1,2 @@
-"""Randora Viewer package."""
+"""Randora Viewer package"""
 

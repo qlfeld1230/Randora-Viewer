@@ -1,4 +1,4 @@
-"""Thin wrapper around QSettings for app preferences."""
+"""Thin wrapper around QSettings for app preferences"""
 
 from __future__ import annotations
 

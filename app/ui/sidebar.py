@@ -1,4 +1,4 @@
-"""Sidebar widget that lists image files and emits selection changes."""
+"""Sidebar widget that lists image files and emits selection changes"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 
 class Sidebar(QWidget):
-    """Simple list of images in the selected folder."""
+    """Simple list of images in the selected folder"""
 
     image_selected = pyqtSignal(Path)
 

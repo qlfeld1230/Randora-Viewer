@@ -1,4 +1,4 @@
-"""Main application window."""
+"""Main application window"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ from app.ui.image_canvas import ImageCanvas
 
 
 class MainWindow(QMainWindow):
-    """Main viewer window with toolbar, navigation controls, and image canvas."""
+    """Main viewer window with toolbar, navigation controls, and image canvas"""
 
     def __init__(self) -> None:
         super().__init__()
@@ -119,17 +119,6 @@ class MainWindow(QMainWindow):
         toolbar.setFloatable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         toolbar.setIconSize(QSize(14, 14))
-        toolbar.setStyleSheet(
-            """
-            QToolBar { border: 0px; background: transparent; spacing: 2px; }
-            QToolButton {
-                min-height: 0px;
-                padding: 2px 4px;
-                qproperty-iconSize: 14px 14px;
-                margin: 0px;
-            }
-            """
-        )
         spacer = QWidget(self)
         spacer.setFixedWidth(6)  # manual left gap
         spacer.setSizePolicy(QSizePolicy.Policy.Fixed,
@@ -585,21 +574,7 @@ class MainWindow(QMainWindow):
         btn.clicked.connect(slot)
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         btn.setFixedSize(QSize(28, 24))
-        btn.setStyleSheet(
-            """
-            QToolButton {
-                background: transparent;
-                border: none;
-                color: #ffffff;
-            }
-            QToolButton:hover {
-                background: rgba(255, 255, 255, 0.28);
-            }
-            QToolButton:pressed {
-                background: rgba(255, 255, 255, 0.36);
-            }
-            """
-        )
+     
         return btn
 
     def _window_control_icon(self, kind: str) -> QIcon:

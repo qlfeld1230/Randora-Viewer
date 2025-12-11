@@ -1,4 +1,4 @@
-"""Filesystem helpers for listing image files in a folder."""
+"""Filesystem helpers for listing image files in a folder"""
 
 from __future__ import annotations
 
