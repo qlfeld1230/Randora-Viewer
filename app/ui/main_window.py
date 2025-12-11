@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 
 from app.services.fs_service import list_images
 from app.services.session_store import load_session, save_session
+from app.services.batch_ops import two_phase_rename
 from app.core.shortcuts import bind_delete, bind_image_navigation
 from app.ui.dialogs import KeywordDialog, BatchEditDialog
 from app.ui.image_canvas import ImageCanvas
@@ -818,47 +819,23 @@ class MainWindow(QMainWindow):
         current_path = self._images[self._current_index] if self._images else None
         replacement: Path | None = None
 
-        temp_paths: list[tuple[Path, str | None, Path]] = []
-        for idx, img in enumerate(images, start=1):
-            base_lower = img.stem.lower()
-            prefix: str | None = None
-            best_len = -1
-            for kw_lower, orig in keywords_lower.items():
-                if base_lower == kw_lower or base_lower.startswith(f"{kw_lower}_"):
-                    if len(kw_lower) > best_len:
-                        best_len = len(kw_lower)
-                        prefix = orig
-            tmp = img.with_name(f"__rvtmp__{idx}__{img.name}")
-            try:
-                img.rename(tmp)
-                temp_paths.append((tmp, prefix, img))
-            except Exception:
-                continue
+        def build_name(idx: int, tmp: Path, original: Path) -> str | None:
+            stem_parts = original.stem.split("_")
+            matched: list[str] = []
+            for part in stem_parts:
+                lower = part.lower()
+                if lower in keywords_lower:
+                    matched.append(keywords_lower[lower])
+                else:
+                    break
+            ext = original.suffix
+            if matched:
+                return f"{'_'.join(matched)}_{idx}{ext}"
+            return f"{idx}{ext}"
 
-        renamed = skipped = failed = 0
-
-        for idx, (tmp_path, prefix, original) in enumerate(temp_paths, start=1):
-            ext = tmp_path.suffix
-            if prefix:
-                new_name = f"{prefix}_{idx}{ext}"
-            else:
-                new_name = f"{idx}{ext}"
-            dest = tmp_path.with_name(new_name)
-            try:
-                if dest.exists():
-                    skipped += 1
-                    tmp_path.rename(original)  # best-effort rollback
-                    continue
-                tmp_path.rename(dest)
-                if current_path and original.resolve() == current_path.resolve():
-                    replacement = dest
-                renamed += 1
-            except Exception:
-                failed += 1
-                try:
-                    tmp_path.rename(original)
-                except Exception:
-                    pass
+        renamed, skipped, failed, replacement = two_phase_rename(
+            images, build_name, current_path
+        )
 
         if renamed == 0 and failed == 0 and skipped == 0:
             self._show_status("이름 변경에 실패했습니다.")

@@ -42,14 +42,7 @@ def _apply_base_palette(app: QApplication) -> None:
 
 def create_window() -> QMainWindow:
     """Create the main window, falling back to a simple placeholder."""
-    try:
-        from app.ui.main_window import MainWindow  # type: ignore
-    except Exception:
-        class MainWindow(QMainWindow):
-            def __init__(self) -> None:
-                super().__init__()
-                self.setWindowTitle("Randora Viewer (placeholder)")
-
+    from app.ui.main_window import MainWindow  # type: ignore
     window = MainWindow()
     window.resize(1200, 800)
     return window
