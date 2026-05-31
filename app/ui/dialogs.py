@@ -28,17 +28,6 @@ class KeywordDialog(QDialog):
         self.setWindowTitle("키워드 추가")
         self.setMinimumSize(420, 320)
         self._keywords: set[str] = set()
-        self.setStyleSheet(
-            """
-            QDialog { background: #000; color: #f2f2f2; }
-            QLabel { color: #f2f2f2; }
-            QListWidget { background: #0b0b0b; color: #f2f2f2; border: 1px solid #444; }
-            QListWidget::item:selected { background: #111; }
-            QLineEdit { color: #f2f2f2; background: #000; border: 1px solid #444; }
-            QPushButton { color: #f2f2f2; background: #000; border: 1px solid #444; }
-            QPushButton:disabled { color: #666; border-color: #222; }
-            """
-        )
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(16, 16, 16, 16)
@@ -53,6 +42,7 @@ class KeywordDialog(QDialog):
         self.delete_btn = QPushButton("삭제", self)
         self.delete_btn.setEnabled(False)
         self.delete_btn.clicked.connect(self._on_delete)
+        self.delete_btn.setStyleSheet("color: #000000; background: #dcdcdc;")
         header_layout.addWidget(self.delete_btn, 0)
         main_layout.addWidget(header)
 
@@ -72,12 +62,14 @@ class KeywordDialog(QDialog):
         self.input.setMinimumHeight(36)
         self.input.setPlaceholderText("키워드를 입력해주세요")
         self.input.textChanged.connect(self._validate_input)
+        self.input.setStyleSheet("color: #000000; background: #dcdcdc;")
         input_layout.addWidget(self.input, 3)
 
         self.add_btn = QPushButton("추가", self)
         self.add_btn.setMinimumHeight(36)
         self.add_btn.setEnabled(False)
         self.add_btn.clicked.connect(self._on_add)
+        self.add_btn.setStyleSheet("color: #000000; background: #dcdcdc;")
         input_layout.addWidget(self.add_btn, 1)
 
         main_layout.addWidget(input_container)

@@ -14,7 +14,6 @@ class SessionState(TypedDict, total=False):
     sort_ascending: bool
     last_keyword: str
     batch_path: str
-    special_path: str
 
 
 _STATE_FILE = Path(__file__).resolve().parent.parent / "resources" / "session.json"
@@ -26,7 +25,6 @@ _DEFAULT: SessionState = {
     "sort_ascending": False,
     "last_keyword": "",
     "batch_path": "",
-    "special_path": "",
 }
 
 
