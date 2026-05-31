@@ -57,7 +57,9 @@ def create_window() -> QMainWindow:
 
 def main() -> None:
     app = QApplication(sys.argv)
+    # Ensure the name shows consistently (window/title bar, taskbar, etc.)
     app.setApplicationName("Randora Viewer")
+    app.setApplicationDisplayName("Randora Viewer")
     app.setOrganizationName("Randora")
     _set_app_user_model_id("Randora.Viewer")
     _apply_base_palette(app)

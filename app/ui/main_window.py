@@ -8,6 +8,7 @@ from pathlib import Path
 import random
 import uuid
 import re
+import shutil
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPen, QPixmap, QKeySequence, QShortcut
@@ -54,8 +55,12 @@ class MainWindow(QMainWindow):
         self.canvas.request_open.connect(self._on_open_folder)
         self.nav_container = NavigationContainer(self.canvas, self._icons_dir)
         session = load_session()
-        self._last_folder: Path | None = Path(session["last_folder"]) if session.get("last_folder") else None
-        self._last_open_path: Path | None = Path(session["open_path"]) if session.get("open_path") else None
+        self._last_folder: Path | None = Path(
+            session["last_folder"]) if session.get("last_folder") else None
+        self._last_open_path: Path | None = Path(
+            session["open_path"]) if session.get("open_path") else None
+        self._special_path: Path | None = Path(
+            session["special_path"]) if session.get("special_path") else None
         self._info_font_size = 10
         self._status_icon_size = 18  # temporary, recalculated in _create_statusbar
         self._statusbar_height = 45
@@ -64,7 +69,8 @@ class MainWindow(QMainWindow):
         self._all_images: list[Path] = []
         self._images: list[Path] = []
         self._current_index: int = 0
-        self._sort_mode: str = session.get("sort_mode", "date")  # date | name | random
+        self._sort_mode: str = session.get(
+            "sort_mode", "date")  # date | name | random
         self._sort_ascending: bool = bool(session.get("sort_ascending", False))
         self._keywords_path = self._icons_dir.parent / "keywords.txt"
         self._keywords: list[str] = self._load_keywords()
@@ -88,18 +94,32 @@ class MainWindow(QMainWindow):
         self._delete_shortcut = bind_delete(
             self.nav_container, self._delete_current_image
         )
-        self._shortcut_fullscreen_toggle = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
-        self._shortcut_fullscreen_toggle.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        self._shortcut_fullscreen_toggle.activated.connect(self.toggle_fullscreen)
+        self._shortcut_nong = QShortcut(QKeySequence(Qt.Key.Key_End), self)
+        self._shortcut_nong.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._shortcut_nong.activated.connect(self._on_nong_clicked)
+        self._shortcut_normal = QShortcut(
+            QKeySequence(Qt.Key.Key_PageDown), self)
+        self._shortcut_normal.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._shortcut_normal.activated.connect(self._on_normal_clicked)
+        self._shortcut_fullscreen_toggle = QShortcut(
+            QKeySequence(Qt.Key.Key_F11), self)
+        self._shortcut_fullscreen_toggle.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._shortcut_fullscreen_toggle.activated.connect(
+            self.toggle_fullscreen)
 
-        self._shortcut_exit_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        self._shortcut_exit_fullscreen.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._shortcut_exit_fullscreen = QShortcut(
+            QKeySequence(Qt.Key.Key_Escape), self)
+        self._shortcut_exit_fullscreen.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._shortcut_exit_fullscreen.activated.connect(self._exit_fullscreen)
         self._init_sort_controls()
 
         if self._last_folder and self._last_folder.exists():
             try:
-                images = list_images(self._last_folder, recursive=False)
+                images = list_images(self._last_folder, recursive=True)
                 if images:
                     self._all_images = images
                     self._current_index = 0
@@ -119,7 +139,8 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        toolbar.setStyleSheet("QToolBar { border: 0px; background: transparent; }")
+        toolbar.setStyleSheet(
+            "QToolBar { border: 0px; background: transparent; }")
         toolbar.setIconSize(QSize(14, 14))
         spacer = QWidget(self)
         spacer.setFixedWidth(6)  # manual left gap
@@ -138,13 +159,21 @@ class MainWindow(QMainWindow):
         sort_layout.addStretch(1)
         self.sort_combo = QComboBox(self)
         self.sort_combo.addItems([" Date", " Name", " Random"])
-        self.sort_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
+        self.sort_combo.setStyleSheet(
+            """
+            QComboBox { color: #f2f2f2; background: #000; border: 1px solid #444; }
+            QComboBox QAbstractItemView { background: #000; color: #f2f2f2; selection-background-color: #111; }
+            """
+        )
         self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
-        sort_layout.addWidget(self.sort_combo, alignment=Qt.AlignmentFlag.AlignCenter)
+        sort_layout.addWidget(
+            self.sort_combo, alignment=Qt.AlignmentFlag.AlignCenter)
         self.sort_dir_checkbox = QCheckBox("Asc", self)
-        self.sort_dir_checkbox.setStyleSheet("color: #f2f2f2; background: transparent;")
+        self.sort_dir_checkbox.setStyleSheet(
+            "color: #f2f2f2; background: transparent;")
         self.sort_dir_checkbox.toggled.connect(self._on_sort_direction_toggled)
-        sort_layout.addWidget(self.sort_dir_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
+        sort_layout.addWidget(self.sort_dir_checkbox,
+                              alignment=Qt.AlignmentFlag.AlignCenter)
         sort_layout.addStretch(1)
         toolbar.addWidget(sort_container)
 
@@ -161,23 +190,61 @@ class MainWindow(QMainWindow):
                                     QSizePolicy.Policy.Expanding)
         toolbar.addWidget(stretch_right)
 
+        keyword_btn_container = QWidget(self)
+        keyword_btn_layout = QHBoxLayout(keyword_btn_container)
+        keyword_btn_layout.setContentsMargins(6, 0, 6, 0)
+        keyword_btn_layout.setSpacing(8)
+        self.swap_btn = QToolButton(self)
+        self.swap_btn.setText(" Swap ")
+        self.swap_btn.setStyleSheet("color: #1e90ff; background: transparent;")
+        self.swap_btn.clicked.connect(self._on_swap_paths)
+        keyword_btn_layout.addWidget(self.swap_btn)
+        self.nong_btn = QToolButton(self)
+        self.nong_btn.setText(" Nong ")
+        self.nong_btn.setStyleSheet("color: #f2f2f2; background: transparent;")
+        self.nong_btn.clicked.connect(self._on_nong_clicked)
+        keyword_btn_layout.addWidget(self.nong_btn)
+        self.normal_btn = QToolButton(self)
+        self.normal_btn.setText(" Normal ")
+        self.normal_btn.setStyleSheet(
+            "color: #f2f2f2; background: transparent;")
+        self.normal_btn.clicked.connect(self._on_normal_clicked)
+        keyword_btn_layout.addWidget(self.normal_btn)
+        toolbar.addWidget(keyword_btn_container)
+
         self.keyword_combo = QComboBox(self)
         self.keyword_combo.setMinimumWidth(90)
-        self.keyword_combo.setStyleSheet("color: #f2f2f2; background: transparent;")
-        toolbar.addWidget(self.keyword_combo)
+        self.keyword_combo.setStyleSheet(
+            """
+            QComboBox { color: #f2f2f2; background: #000; border: 1px solid #444; }
+            QComboBox QAbstractItemView { background: #000; color: #f2f2f2; selection-background-color: #111; }
+            """
+        )
+        keyword_combo_container = QWidget(self)
+        keyword_combo_layout = QHBoxLayout(keyword_combo_container)
+        keyword_combo_layout.setContentsMargins(6, 0, 0, 0)
+        keyword_combo_layout.setSpacing(0)
+        keyword_combo_layout.addWidget(self.keyword_combo)
+        toolbar.addWidget(keyword_combo_container)
         self._populate_keywords_combo()
-        self.keyword_combo.currentIndexChanged.connect(self._on_keyword_changed)
-        self.keyword_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.keyword_combo.customContextMenuRequested.connect(self._on_keyword_context_menu)
+        self.keyword_combo.currentIndexChanged.connect(
+            self._on_keyword_changed)
+        self.keyword_combo.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.keyword_combo.customContextMenuRequested.connect(
+            self._on_keyword_context_menu)
         spacer_keywords = QWidget(self)
         spacer_keywords.setFixedWidth(6)
-        spacer_keywords.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        spacer_keywords.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         toolbar.addWidget(spacer_keywords)
 
         self.settings_btn = QToolButton(self)
-        self.settings_btn.setIcon(QIcon(str(self._icon_path("setting icon.png"))))
+        self.settings_btn.setIcon(
+            QIcon(str(self._icon_path("setting icon.png"))))
         self.settings_btn.setIconSize(QSize(16, 16))
-        self.settings_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.settings_btn.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_btn.clicked.connect(self._show_settings_menu)
         toolbar.addWidget(self.settings_btn)
@@ -276,9 +343,8 @@ class MainWindow(QMainWindow):
             start_dir = str(self._last_folder)
 
         dialog = QFileDialog(self, "폴더 또는 이미지 선택", start_dir)
-        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
-        dialog.setNameFilters(
-            ["이미지 파일 (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.tiff)", "모든 파일 (*)"])
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)  # 폴더만 선택하도록
 
         if not dialog.exec():
             return
@@ -296,7 +362,7 @@ class MainWindow(QMainWindow):
             selected_image = first
 
         try:
-            images = list_images(folder, recursive=False)
+            images = list_images(folder, recursive=True)
         except Exception as exc:  # pragma: no cover - UI path
             self._show_status(f"폴더를 읽을 수 없습니다: {exc}")
             return
@@ -360,11 +426,13 @@ class MainWindow(QMainWindow):
             self._update_nav_buttons()
             return
         self._images = list(self._all_images)
-        self._apply_sort(self._sort_mode, current, ascending=self._sort_ascending)
+        self._apply_sort(self._sort_mode, current,
+                         ascending=self._sort_ascending)
         kw = self._current_keyword()
         if kw:
             kw_lower = kw.lower()
-            self._images = [p for p in self._images if kw_lower in p.name.lower()]
+            self._images = [
+                p for p in self._images if kw_lower in p.name.lower()]
         if not self._images:
             self.canvas.clear_image()
             self._set_info_placeholder()
@@ -580,7 +648,7 @@ class MainWindow(QMainWindow):
         btn.clicked.connect(slot)
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         btn.setFixedSize(QSize(28, 24))
-     
+
         return btn
 
     def _window_control_icon(self, kind: str) -> QIcon:
@@ -612,14 +680,16 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         menu.setStyleSheet(
             """
-            QMenu { background: #282727; color: #f2f2f2; }
-            QMenu::item:selected { background: #3a3939; }
+            QMenu { background: #000; color: #f2f2f2; }
+            QMenu::item:selected { background: #111; }
             """
         )
         action_keyword = menu.addAction("키워드 추가")
         action_batch = menu.addAction("일괄 수정")
+        action_special = menu.addAction("특수 경로 설정")
         action_keyword.triggered.connect(self._open_keyword_dialog)
         action_batch.triggered.connect(self._open_batch_dialog)
+        action_special.triggered.connect(self._set_special_path)
         pos = self.settings_btn.mapToGlobal(
             self.settings_btn.rect().bottomLeft())
         menu.exec(pos)
@@ -636,13 +706,13 @@ class MainWindow(QMainWindow):
             return
         if cleaned.lower() == "none" or cleaned in self._keywords:
             return
-        current_idx = self.keyword_combo.currentIndex() if hasattr(self, "keyword_combo") else -1
+        current_idx = self.keyword_combo.currentIndex(
+        ) if hasattr(self, "keyword_combo") else -1
         self._keywords.append(cleaned)
         self.keyword_combo.addItem(f" {cleaned}")
         self._save_keywords_file()
         if current_idx >= 0:
             self.keyword_combo.setCurrentIndex(current_idx)
-
 
     def _load_keywords(self) -> list[str]:
         try:
@@ -671,7 +741,8 @@ class MainWindow(QMainWindow):
     def _save_keywords_file(self) -> None:
         try:
             self._keywords_path.parent.mkdir(parents=True, exist_ok=True)
-            to_save = ["None"] + [kw for kw in self._keywords if kw.lower() != "none"]
+            to_save = ["None"] + \
+                [kw for kw in self._keywords if kw.lower() != "none"]
             if not to_save:
                 to_save = ["None"]
             content = "\n".join(to_save) + ("\n" if to_save else "")
@@ -696,7 +767,8 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= self.keyword_combo.count():
             return
         text = self.keyword_combo.itemText(index).strip()
-        self._session_state["last_keyword"] = text if text.lower() != "none" else ""
+        self._session_state["last_keyword"] = text if text.lower(
+        ) != "none" else ""
         save_session(self._session_state)
         current = self._images[self._current_index] if self._images else None
         self._rebuild_images(current)
@@ -708,6 +780,151 @@ class MainWindow(QMainWindow):
         if text.lower() == "none" or text == "":
             return None
         return text
+
+    def _set_special_path(self) -> None:
+        start_dir = (
+            str(self._special_path)
+            if self._special_path
+            else str(self._last_open_path)
+            if self._last_open_path
+            else str(self._last_folder)
+            if self._last_folder
+            else ""
+        )
+        dialog = QFileDialog(self, "특수 경로 선택", start_dir)
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)  # 폴더만 선택하도록
+        if not dialog.exec():
+            return
+        selected = dialog.selectedFiles()
+        if not selected:
+            return
+        target = Path(selected[0])
+        directory = target if target.is_dir() else target.parent
+        self._special_path = directory
+        self._session_state["special_path"] = str(self._special_path)
+        save_session(self._session_state)
+        self._show_status(f"특수 경로 설정: {directory}")
+
+    def _on_swap_paths(self) -> None:
+        if not self._special_path:
+            self._show_status("특수 경로를 먼저 설정하세요.")
+            return
+        last_folder = self._last_folder
+        special_folder = self._special_path
+        self._last_folder, self._special_path = special_folder, last_folder
+        self._last_open_path = self._last_folder
+        self._session_state["last_folder"] = str(
+            self._last_folder) if self._last_folder else ""
+        self._session_state["special_path"] = str(
+            self._special_path) if self._special_path else ""
+        self._session_state["open_path"] = str(
+            self._last_open_path) if self._last_open_path else ""
+        save_session(self._session_state)
+        if not self._last_folder:
+            self._all_images = []
+            self._images = []
+            self.canvas.clear_image()
+            self._set_info_placeholder()
+            self._update_nav_buttons()
+            self._show_status("로드할 경로가 없습니다")
+            return
+        if not self._last_folder.exists():
+            self._show_status("경로가 존재하지 않습니다.")
+            return
+        try:
+            images = list_images(self._last_folder, recursive=True)
+            if images:
+                self._all_images = images
+                self._current_index = 0
+                self._rebuild_images(images[0])
+                self._show_status(f"{len(images)}개 이미지 로드 (특수 경로 전환)")
+            else:
+                self._all_images = []
+                self._images = []
+                self.canvas.clear_image()
+                self._set_info_placeholder()
+                self._update_nav_buttons()
+                self._show_status("이미지가 없습니다")
+        except Exception as exc:
+            self._show_status(f"폴더를 열 수 없습니다: {exc}")
+
+    def _renumber_folder(self, folder: Path, current_path: Path | None, extra_keywords: list[str] | None = None) -> tuple[int, int, int, Path | None]:
+        try:
+            images = list_images(folder, recursive=True)
+        except Exception as exc:
+            self._show_status(f"이미지 목록을 불러오지 못했습니다: {exc}")
+            return 0, 0, 1, None
+        if not images:
+            return 0, 0, 0, None
+
+        images.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
+        keywords_lower = {
+            kw.lower(): kw for kw in self._keywords if kw.lower() != "none"}
+        if extra_keywords:
+            for kw in extra_keywords:
+                lower = kw.lower()
+                if lower not in keywords_lower:
+                    keywords_lower[lower] = kw
+
+        def build_name(idx: int, tmp: Path, original: Path) -> str | None:
+            stem_parts = original.stem.split("_")
+            matched: list[str] = []
+            for part in stem_parts:
+                lower = part.lower()
+                if lower in keywords_lower:
+                    matched.append(keywords_lower[lower])
+                else:
+                    break
+            ext = original.suffix
+            if matched:
+                return f"{'_'.join(matched)}_{idx}{ext}"
+            return f"{idx}{ext}"
+
+        return two_phase_rename(images, build_name, current_path)
+
+    def _move_to_special_with_keyword(self, keyword: str) -> None:
+        if not self._images:
+            return
+        if not self._special_path:
+            self._show_status("특수 경로를 먼저 설정하세요.")
+            return
+        src = self._images[self._current_index]
+        dest_dir = self._special_path
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        prefix_lower = f"{keyword.lower()}_"
+        new_name = src.name if src.name.lower().startswith(
+            prefix_lower) else f"{keyword}_{src.name}"
+        dest = dest_dir / new_name
+        try:
+            shutil.move(str(src), dest)
+        except Exception as exc:
+            self._show_status(f"이동 실패: {exc}")
+            return
+
+        renamed, skipped, failed, _ = self._renumber_folder(
+            dest_dir, dest, extra_keywords=[keyword])
+        self._show_status(
+            f"{keyword} 이동 및 정렬 완료: {renamed}개 변경, {skipped}개 건너뜀, {failed}개 실패")
+
+        if src in self._all_images:
+            self._all_images = [p for p in self._all_images if p != src]
+        if src in self._images:
+            idx = self._images.index(src)
+            del self._images[idx]
+            if self._images:
+                self._current_index = min(idx, len(self._images) - 1)
+                self._show_image_at_index(self._current_index)
+            else:
+                self.canvas.clear_image()
+                self._set_info_placeholder()
+                self._update_nav_buttons()
+
+    def _on_nong_clicked(self) -> None:
+        self._move_to_special_with_keyword("Nong")
+
+    def _on_normal_clicked(self) -> None:
+        self._move_to_special_with_keyword("Normal")
 
     def _on_keyword_context_menu(self, pos) -> None:
         index = self.keyword_combo.currentIndex()
@@ -814,7 +1031,8 @@ class MainWindow(QMainWindow):
 
         images.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
 
-        keywords_lower = {kw.lower(): kw for kw in self._keywords if kw.lower() != "none"}
+        keywords_lower = {
+            kw.lower(): kw for kw in self._keywords if kw.lower() != "none"}
         current_path = self._images[self._current_index] if self._images else None
         replacement: Path | None = None
 
@@ -873,6 +1091,7 @@ class MainWindow(QMainWindow):
                 self._rebuild_images(replacement)
             except Exception:
                 pass
+
     def _send_to_trash(self, path: Path) -> None:
         """Delete 파일을 휴지통으로 보낸다. 실패 시 삭제로 폴백."""
         try:
