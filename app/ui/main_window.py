@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QGraphicsOpacityEffect,
     QSizePolicy,
+    QScrollArea,
     QStatusBar,
     QToolBar,
     QToolButton,
@@ -74,7 +75,9 @@ class MainWindow(QMainWindow):
         self._sort_ascending: bool = bool(session.get("sort_ascending", False))
         self._keywords_path = self._icons_dir.parent / "keywords.txt"
         self._keywords: list[str] = self._load_keywords()
-        self._last_keyword: str = session.get("last_keyword", "")
+        self._selected_keywords: set[str] = set(
+            session.get("selected_keywords", []))
+        self._keyword_buttons: dict[str, QToolButton] = {}
         self._session_state = session
 
         self._create_actions()
@@ -212,27 +215,24 @@ class MainWindow(QMainWindow):
         keyword_btn_layout.addWidget(self.normal_btn)
         toolbar.addWidget(keyword_btn_container)
 
-        self.keyword_combo = QComboBox(self)
-        self.keyword_combo.setMinimumWidth(90)
-        self.keyword_combo.setStyleSheet(
-            """
-            QComboBox { color: #f2f2f2; background: #000; border: 1px solid #444; }
-            QComboBox QAbstractItemView { background: #000; color: #f2f2f2; selection-background-color: #111; }
-            """
-        )
-        keyword_combo_container = QWidget(self)
-        keyword_combo_layout = QHBoxLayout(keyword_combo_container)
-        keyword_combo_layout.setContentsMargins(6, 0, 0, 0)
-        keyword_combo_layout.setSpacing(0)
-        keyword_combo_layout.addWidget(self.keyword_combo)
-        toolbar.addWidget(keyword_combo_container)
-        self._populate_keywords_combo()
-        self.keyword_combo.currentIndexChanged.connect(
-            self._on_keyword_changed)
-        self.keyword_combo.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu)
-        self.keyword_combo.customContextMenuRequested.connect(
-            self._on_keyword_context_menu)
+        keyword_container = QWidget(self)
+        keyword_layout = QHBoxLayout(keyword_container)
+        keyword_layout.setContentsMargins(6, 0, 0, 0)
+        keyword_layout.setSpacing(6)
+        self._keyword_buttons_widget = QWidget(self)
+        self._keyword_buttons_layout = QHBoxLayout(
+            self._keyword_buttons_widget)
+        self._keyword_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self._keyword_buttons_layout.setSpacing(4)
+        keyword_scroll = QScrollArea(self)
+        keyword_scroll.setWidget(self._keyword_buttons_widget)
+        keyword_scroll.setWidgetResizable(True)
+        keyword_scroll.setMaximumHeight(40)
+        keyword_scroll.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }")
+        keyword_layout.addWidget(keyword_scroll)
+        toolbar.addWidget(keyword_container)
+        self._populate_keywords_buttons()
         spacer_keywords = QWidget(self)
         spacer_keywords.setFixedWidth(6)
         spacer_keywords.setSizePolicy(
@@ -428,11 +428,12 @@ class MainWindow(QMainWindow):
         self._images = list(self._all_images)
         self._apply_sort(self._sort_mode, current,
                          ascending=self._sort_ascending)
-        kw = self._current_keyword()
-        if kw:
-            kw_lower = kw.lower()
+        if self._selected_keywords:
+            keywords_lower = {kw.lower() for kw in self._selected_keywords}
             self._images = [
-                p for p in self._images if kw_lower in p.name.lower()]
+                p for p in self._images
+                if any(kw in p.name.lower() for kw in keywords_lower)
+            ]
         if not self._images:
             self.canvas.clear_image()
             self._set_info_placeholder()
@@ -706,13 +707,9 @@ class MainWindow(QMainWindow):
             return
         if cleaned.lower() == "none" or cleaned in self._keywords:
             return
-        current_idx = self.keyword_combo.currentIndex(
-        ) if hasattr(self, "keyword_combo") else -1
         self._keywords.append(cleaned)
-        self.keyword_combo.addItem(f" {cleaned}")
         self._save_keywords_file()
-        if current_idx >= 0:
-            self.keyword_combo.setCurrentIndex(current_idx)
+        self._populate_keywords_buttons()
 
     def _load_keywords(self) -> list[str]:
         try:
@@ -750,36 +747,58 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _populate_keywords_combo(self) -> None:
-        self.keyword_combo.clear()
-        self.keyword_combo.addItem(" None")
+    def _populate_keywords_buttons(self) -> None:
+        self._keyword_buttons.clear()
+        while self._keyword_buttons_layout.count():
+            item = self._keyword_buttons_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
         for kw in self._keywords:
             if kw.lower() == "none":
                 continue
-            self.keyword_combo.addItem(f" {kw}")
-        if self._last_keyword:
-            target_text = f" {self._last_keyword}"
-            idx = self.keyword_combo.findText(target_text)
-            if idx != -1:
-                self.keyword_combo.setCurrentIndex(idx)
+            btn = QToolButton(self)
+            btn.setText(f" {kw} ")
+            btn.setCheckable(True)
+            is_selected = kw in self._selected_keywords
+            btn.setChecked(is_selected)
+            self._update_keyword_button_style(btn, is_selected)
+            btn.clicked.connect(
+                lambda checked, keyword=kw: self._on_keyword_button_toggled(
+                    keyword, checked)
+            )
+            self._keyword_buttons[kw] = btn
+            self._keyword_buttons_layout.addWidget(btn)
 
-    def _on_keyword_changed(self, index: int) -> None:
-        if index < 0 or index >= self.keyword_combo.count():
-            return
-        text = self.keyword_combo.itemText(index).strip()
-        self._session_state["last_keyword"] = text if text.lower(
-        ) != "none" else ""
+        self._keyword_buttons_layout.addStretch()
+
+    def _update_keyword_button_style(self, btn: QToolButton, is_selected: bool) -> None:
+        if is_selected:
+            btn.setStyleSheet(
+                "QToolButton { color: #fff; background: #1e90ff; border: 1px solid #1e90ff; padding: 4px; border-radius: 3px; }"
+            )
+        else:
+            btn.setStyleSheet(
+                "QToolButton { color: #bbb; background: #444; border: 1px solid #555; padding: 4px; border-radius: 3px; }"
+            )
+
+    def _on_keyword_button_toggled(self, keyword: str, is_checked: bool) -> None:
+        if is_checked:
+            self._selected_keywords.add(keyword)
+        else:
+            self._selected_keywords.discard(keyword)
+
+        if keyword in self._keyword_buttons:
+            self._update_keyword_button_style(
+                self._keyword_buttons[keyword], is_checked)
+
+        self._session_state["selected_keywords"] = list(
+            self._selected_keywords)
         save_session(self._session_state)
+
         current = self._images[self._current_index] if self._images else None
         self._rebuild_images(current)
-
-    def _current_keyword(self) -> str | None:
-        if not hasattr(self, "keyword_combo"):
-            return None
-        text = self.keyword_combo.currentText().strip()
-        if text.lower() == "none" or text == "":
-            return None
-        return text
 
     def _set_special_path(self) -> None:
         start_dir = (
@@ -926,20 +945,6 @@ class MainWindow(QMainWindow):
     def _on_normal_clicked(self) -> None:
         self._move_to_special_with_keyword("Normal")
 
-    def _on_keyword_context_menu(self, pos) -> None:
-        index = self.keyword_combo.currentIndex()
-        if index <= 0:
-            return
-        text = self.keyword_combo.itemText(index).strip()
-        if not text or text.lower() == "none":
-            return
-        menu = QMenu(self)
-        delete_action = menu.addAction("삭제")
-        global_pos = self.keyword_combo.mapToGlobal(pos)
-        action = menu.exec(global_pos)
-        if action == delete_action:
-            self._delete_keyword(text)
-
     def _delete_keyword(self, keyword: str) -> None:
         cleaned = keyword.strip()
         if cleaned.lower() == "none":
@@ -948,9 +953,12 @@ class MainWindow(QMainWindow):
             return
         self._keywords = [kw for kw in self._keywords if kw != cleaned]
         self._save_keywords_file()
-        self._populate_keywords_combo()
-        self._session_state["last_keyword"] = ""
-        save_session(self._session_state)
+        self._populate_keywords_buttons()
+        if cleaned in self._selected_keywords:
+            self._selected_keywords.discard(cleaned)
+            self._session_state["selected_keywords"] = list(
+                self._selected_keywords)
+            save_session(self._session_state)
         current = self._images[self._current_index] if self._images else None
         self._rebuild_images(current)
 
@@ -1376,3 +1384,72 @@ class NavIcon(ClickableIcon):
         if not self._enabled:
             return
         super().mousePressEvent(event)
+
+
+def two_phase_rename(images: list[Path], build_name, current_path: Path | None) -> tuple[int, int, int, Path | None]:
+    """
+    Rename image files using a two-phase approach to avoid conflicts.
+
+    Phase 1: Rename all files to temporary names with UUID
+    Phase 2: Rename from temporary names to final names using build_name callback
+
+    Args:
+        images: List of image file paths to rename
+        build_name: Callable that takes (index, temp_path, original_path) and returns new name or None
+        current_path: The path of the currently selected file (to track where it moves to)
+
+    Returns:
+        Tuple of (renamed_count, skipped_count, failed_count, new_current_path)
+    """
+    renamed = 0
+    skipped = 0
+    failed = 0
+    new_current_path = None
+
+    # Phase 1: Rename to temporary names using UUID to avoid conflicts
+    temp_names = {}  # Maps original path to temp path
+    for original in images:
+        if not original.exists():
+            failed += 1
+            continue
+
+        try:
+            temp_name = f".temp_{uuid.uuid4().hex}{original.suffix}"
+            temp_path = original.parent / temp_name
+            original.rename(temp_path)
+            temp_names[original] = temp_path
+        except Exception:
+            failed += 1
+
+    # Phase 2: Rename from temporary names to final names
+    for i, original in enumerate(images):
+        if original not in temp_names:
+            continue
+
+        temp_path = temp_names[original]
+        try:
+            new_name = build_name(i + 1, temp_path, original)
+            if not new_name:
+                skipped += 1
+                # Move back to original name if no new name generated
+                if temp_path.exists():
+                    temp_path.rename(original)
+                continue
+
+            final_path = original.parent / new_name
+            temp_path.rename(final_path)
+            renamed += 1
+
+            # Track if this was the currently selected file
+            if current_path == original:
+                new_current_path = final_path
+        except Exception:
+            failed += 1
+            # Try to restore original name
+            if temp_path.exists():
+                try:
+                    temp_path.rename(original)
+                except Exception:
+                    pass
+
+    return renamed, skipped, failed, new_current_path
